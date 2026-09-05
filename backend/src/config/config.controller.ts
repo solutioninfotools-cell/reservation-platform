@@ -1,0 +1,30 @@
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ConfigService } from './config.service';
+import { InitialSetupDto } from './dto/initial-setup.dto';
+import { ResetSupervisorDto } from './dto/reset-supervisor.dto';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+
+@ApiTags('config')
+@Controller('config')
+export class ConfigController {
+  constructor(private config: ConfigService) {}
+
+  @Get()
+  getPublicConfig() {
+    return this.config.getPublicConfig();
+  }
+
+  @Post('initial-setup')
+  initialSetup(@Body() dto: InitialSetupDto) {
+    return this.config.initialSetup(dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Patch('reset-supervisor')
+  resetSupervisor(@CurrentUser() user: any, @Body() dto: ResetSupervisorDto) {
+    return this.config.resetSupervisor(user.userId, dto);
+  }
+}
