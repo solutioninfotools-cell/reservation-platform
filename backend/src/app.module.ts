@@ -24,6 +24,7 @@ import { ClientsModule } from './clients/clients.module';
     AuditModule,
     EmailModule,
     NotificationsModule,
+    
     WebsocketModule,
     ClientsModule,
     AuthModule,

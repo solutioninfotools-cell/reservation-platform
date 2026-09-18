@@ -1,0 +1,391 @@
+// ==========================================================================
+// RendezVousApp — Schéma Prisma
+// Conforme au cahier des charges : configuration à espace unique (un seul
+// domaine actif), 4 rôles (Admin, Professionnel, Réceptionniste, Client sans
+// compte), moteur de réservation, statuts, audit, notifications.
+// ==========================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// --------------------------------------------------------------------------
+// Configuration système (V1 : un seul enregistrement, singleton logique)
+// --------------------------------------------------------------------------
+enum ModeSupervision {
+  ADMIN
+  PRESTATAIRE
+}
+
+model SystemConfig {
+  id                String          @id @default(uuid())
+  isConfigured      Boolean         @default(false)
+  modeSupervision   ModeSupervision?
+  domaine           String?         // ex: "Médical", "Juridique", "Coiffure/Beauté"...
+  platformName      String          @default("RendezVousApp")
+  slogan            String?
+  description       String?
+  logoUrl           String?
+  address           String?
+  phone             String?
+  email             String?
+  joursOuvrables    String[]        @default([])
+  horairesGeneraux  String?
+  conditions        String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+// --------------------------------------------------------------------------
+// Comptes utilisateurs (Admin / Professionnel / Réceptionniste)
+// Le Client n'a pas de compte (cf. cahier des charges).
+// --------------------------------------------------------------------------
+enum Role {
+  ADMIN
+  PROFESSIONNEL
+  RECEPTIONNISTE
+}
+
+enum StatutCompte {
+  EN_ATTENTE
+  ACTIF
+  REFUSE
+  DESACTIVE
+}
+
+model User {
+  id                String        @id @default(uuid())
+  email             String        @unique
+  passwordHash      String
+  role              Role
+  statutCompte      StatutCompte  @default(EN_ATTENTE)
+  emailVerifie      Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  lastLoginAt       DateTime?
+
+  professionnel     Professionnel?
+  receptionniste    Receptionniste?
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  emailTokens       EmailVerificationToken[]
+
+  @@index([role])
+  @@index([statutCompte])
+}
+
+// --------------------------------------------------------------------------
+// Professionnel
+// --------------------------------------------------------------------------
+model Professionnel {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  nom           String
+  specialite    String?
+  description   String?
+  adresse       String?
+  telephone     String?
+  photoUrl      String?
+
+  services              Service[]
+  disponibilites        Disponibilite[]
+  indisponibilites      Indisponibilite[]
+  rendezVous            RendezVous[]
+  affectations          Affectation[]
+  champsPersonnalises   ChampPersonnalise[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([nom])
+}
+
+// --------------------------------------------------------------------------
+// Réceptionniste + affectation à un ou plusieurs Professionnels avec
+// permissions granulaires (conforme section "Réceptionniste" du CDC).
+// --------------------------------------------------------------------------
+model Receptionniste {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  nom         String
+  telephone   String?
+
+  affectations Affectation[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Affectation {
+  id                    String         @id @default(uuid())
+  professionnelId       String
+  professionnel         Professionnel  @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  receptionnisteId      String
+  receptionniste        Receptionniste @relation(fields: [receptionnisteId], references: [id], onDelete: Cascade)
+
+  peutConsulterAgenda     Boolean @default(true)
+  peutGererRdv            Boolean @default(true)
+  peutGererPlanning       Boolean @default(false)
+  peutGererParametres     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([professionnelId, receptionnisteId])
+}
+
+// --------------------------------------------------------------------------
+// Client (sans compte) — identifié par téléphone/email pour éviter les doublons
+// --------------------------------------------------------------------------
+model Client {
+  id            String   @id @default(uuid())
+  nom           String
+  prenom        String
+  telephone     String
+  email         String?
+  dateNaissance DateTime?
+
+  rendezVous    RendezVous[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([telephone])
+  @@index([nom, prenom])
+}
+
+// --------------------------------------------------------------------------
+// Services + champs personnalisés configurables
+// --------------------------------------------------------------------------
+model Service {
+  id              String   @id @default(uuid())
+  professionnelId String
+  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  nom             String
+  description     String?
+  dureeMinutes    Int
+  prix            Int?     // en centimes de la devise locale, null si non applicable
+  actif           Boolean  @default(true)
+  imageUrl        String?
+
+  champsPersonnalises ChampPersonnalise[]
+  rendezVous          RendezVous[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([professionnelId])
+}
+
+enum TypeChamp {
+  TEXTE
+  NOMBRE
+  SELECTION
+  RADIO
+  CHECKBOX
+  DATE
+}
+
+model ChampPersonnalise {
+  id              String   @id @default(uuid())
+  professionnelId String
+  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  serviceId       String?
+  service         Service?  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  label           String
+  type            TypeChamp
+  options         String[] @default([]) // pour SELECTION / RADIO
+  obligatoire     Boolean  @default(false)
+  ordre           Int      @default(0)
+
+  reponses        ReponseChamp[]
+
+  createdAt       DateTime @default(now())
+}
+
+model ReponseChamp {
+  id            String   @id @default(uuid())
+  champId       String
+  champ         ChampPersonnalise @relation(fields: [champId], references: [id], onDelete: Cascade)
+  rendezVousId  String
+  rendezVous    RendezVous @relation(fields: [rendezVousId], references: [id], onDelete: Cascade)
+  valeur        String
+}
+
+// --------------------------------------------------------------------------
+// Disponibilités / Indisponibilités
+// --------------------------------------------------------------------------
+model Disponibilite {
+  id              String   @id @default(uuid())
+  professionnelId String
+  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  jourSemaine     Int      // 0 = lundi ... 6 = dimanche
+  heureDebut      String   // "09:00"
+  heureFin        String   // "12:00"
+
+  createdAt       DateTime @default(now())
+
+  @@index([professionnelId, jourSemaine])
+}
+
+enum TypeIndisponibilite {
+  CRENEAU
+  JOURNEE
+  PERIODE
+}
+
+model Indisponibilite {
+  id              String   @id @default(uuid())
+  professionnelId String
+  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  type            TypeIndisponibilite
+  dateDebut       DateTime
+  dateFin         DateTime
+  motif           String?
+  clientsNotifies Boolean  @default(false)
+
+  createdAt       DateTime @default(now())
+
+  @@index([professionnelId, dateDebut, dateFin])
+}
+
+// --------------------------------------------------------------------------
+// Rendez-vous — cœur du moteur de réservation
+// --------------------------------------------------------------------------
+enum StatutRdv {
+  RESERVE
+  CLIENT_ARRIVE
+  EN_COURS
+  TERMINE
+  ABSENT
+  ANNULE
+}
+
+enum OrigineRdv {
+  EN_LIGNE
+  RECEPTIONNISTE
+  PROFESSIONNEL
+}
+
+model RendezVous {
+  id              String   @id @default(uuid())
+  professionnelId String
+  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  serviceId       String
+  service         Service  @relation(fields: [serviceId], references: [id])
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id])
+
+  dateDebut       DateTime
+  dateFin         DateTime
+  statut          StatutRdv   @default(RESERVE)
+  origine         OrigineRdv  @default(EN_LIGNE)
+  remarque        String?
+  motifAnnulation String?
+
+  manageToken     String?     @unique // permet au client de gérer son RDV sans compte
+
+  reponsesChamps  ReponseChamp[]
+  historique      HistoriqueStatut[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Empêche deux RDV strictement identiques (même pro, même créneau de début)
+  // La vérification de chevauchement complète est faite en transaction dans le service.
+  @@unique([professionnelId, dateDebut])
+  @@index([professionnelId, dateDebut, dateFin])
+  @@index([clientId])
+  @@index([statut])
+}
+
+model HistoriqueStatut {
+  id           String     @id @default(uuid())
+  rendezVousId String
+  rendezVous   RendezVous @relation(fields: [rendezVousId], references: [id], onDelete: Cascade)
+  ancienStatut StatutRdv?
+  nouveauStatut StatutRdv
+  changedBy    String?    // userId ou "client"
+  createdAt    DateTime   @default(now())
+}
+
+// --------------------------------------------------------------------------
+// Notifications
+// --------------------------------------------------------------------------
+enum TypeNotification {
+  NOUVELLE_RESERVATION
+  ANNULATION
+  MODIFICATION
+  CHANGEMENT_STATUT
+  PROFESSIONNEL_ABSENT
+  RAPPEL
+  CONFLIT_PLANNING
+  COMPTE_VALIDE
+  COMPTE_REFUSE
+  AFFECTATION
+  AUTORISATIONS_MODIFIEES
+}
+
+model Notification {
+  id        String            @id @default(uuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      TypeNotification
+  message   String
+  lu        Boolean           @default(false)
+  createdAt DateTime          @default(now())
+
+  @@index([userId, lu])
+}
+
+// --------------------------------------------------------------------------
+// Audit — actions sensibles (section 30 du CDC)
+// --------------------------------------------------------------------------
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String   // ex: "LOGIN", "RDV_CREATED", "RDV_STATUS_CHANGED", "SUPERVISOR_RESET"...
+  cible     String?  // id de l'entité concernée
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([action])
+  @@index([createdAt])
+}
+
+// --------------------------------------------------------------------------
+// Vérification email (abstraction sans fournisseur externe — section 24)
+// --------------------------------------------------------------------------
+enum TypeToken {
+  VERIFICATION_EMAIL
+  RESET_PASSWORD
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code      String
+  type      TypeToken @default(VERIFICATION_EMAIL)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, type])
+}

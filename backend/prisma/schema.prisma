@@ -1,10 +1,3 @@
-// ==========================================================================
-// RendezVousApp — Schéma Prisma
-// Conforme au cahier des charges : configuration à espace unique (un seul
-// domaine actif), 4 rôles (Admin, Professionnel, Réceptionniste, Client sans
-// compte), moteur de réservation, statuts, audit, notifications.
-// ==========================================================================
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -15,37 +8,309 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// --------------------------------------------------------------------------
-// Configuration système (V1 : un seul enregistrement, singleton logique)
-// --------------------------------------------------------------------------
+model SystemConfig {
+  id                         String           @id @default(uuid())
+  isConfigured               Boolean          @default(false)
+  modeSupervision            ModeSupervision?
+  domaine                    String?
+  platformName               String           @default("RendezVousApp")
+  slogan                     String?
+  description                String?
+  logoUrl                    String?
+  address                    String?
+  phone                      String?
+  email                      String?
+  joursOuvrables             String[]         @default([])
+  horairesGeneraux           String?
+  conditions                 String?
+  createdAt                  DateTime         @default(now())
+  updatedAt                  DateTime         @updatedAt
+  conditionsReservation      String?
+  delaiMinAnnulationHeures   Int              @default(0)
+  delaiMinModificationHeures Int              @default(48)
+  heroImageUrl               String?
+  maxChangementsRdv          Int              @default(1)
+  localisationUrl            String?
+}
+
+model User {
+  id                    String                   @id @default(uuid())
+  email                 String                   @unique
+  passwordHash          String
+  role                  Role
+  statutCompte          StatutCompte             @default(EN_ATTENTE)
+  emailVerifie          Boolean                  @default(false)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  lastLoginAt           DateTime?
+  auditLogs             AuditLog[]
+  emailTokens           EmailVerificationToken[]
+  notificationsReceived Notification[]           @relation("NotificationRecipient")
+  notificationsSent     Notification[]           @relation("NotificationSender")
+
+  professionnel  Professionnel?
+  receptionniste Receptionniste?
+
+  @@index([role])
+  @@index([statutCompte])
+}
+
+model Professionnel {
+  id                    String                 @id @default(uuid())
+  userId                String                 @unique
+  nom                   String
+  specialite            String?
+  description           String?
+  adresse               String?
+  telephone             String?
+  photoUrl              String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  affectations          Affectation[]
+  champsPersonnalises   ChampPersonnalise[]
+  disponibilites        Disponibilite[]
+  indisponibilites      Indisponibilite[]
+  NoteClient            NoteClient[]
+  ParametresReservation ParametresReservation?
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rendezVous            RendezVous[]
+  services              Service[]
+
+  @@index([nom])
+}
+
+model Receptionniste {
+  id           String        @id @default(uuid())
+  userId       String        @unique
+  nom          String
+  telephone    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  affectations Affectation[]
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Affectation {
+  id                  String         @id @default(uuid())
+  professionnelId     String
+  receptionnisteId    String
+  peutConsulterAgenda Boolean        @default(true)
+  peutGererRdv        Boolean        @default(true)
+  peutGererPlanning   Boolean        @default(false)
+  peutGererParametres Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  actif               Boolean        @default(true)
+  professionnel       Professionnel  @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  receptionniste      Receptionniste @relation(fields: [receptionnisteId], references: [id], onDelete: Cascade)
+
+  @@unique([professionnelId, receptionnisteId])
+}
+
+model Client {
+  id            String       @id @default(uuid())
+  nom           String
+  prenom        String
+  telephone     String       @unique
+  email         String?
+  dateNaissance DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  adresse       String?
+  NoteClient    NoteClient[]
+  rendezVous    RendezVous[]
+
+  @@index([nom, prenom])
+}
+
+model Service {
+  id                  String              @id @default(uuid())
+  professionnelId     String
+  nom                 String
+  description         String?
+  dureeMinutes        Int
+  prix                Int?
+  actif               Boolean             @default(true)
+  imageUrl            String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  statut              StatutService       @default(DISPONIBLE)
+  champsPersonnalises ChampPersonnalise[]
+  rendezVous          RendezVous[]
+  professionnel       Professionnel       @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  @@index([professionnelId])
+}
+
+model ChampPersonnalise {
+  id                String         @id @default(uuid())
+  professionnelId   String
+  serviceId         String?
+  label             String
+  type              TypeChamp
+  options           String[]       @default([])
+  obligatoire       Boolean        @default(false)
+  ordre             Int            @default(0)
+  createdAt         DateTime       @default(now())
+  conditionLogique  String         @default("ET")
+  conditions        Json?
+  requisSiCondition Boolean        @default(false)
+  texteAide         String?
+  valeurParDefaut   String?
+  professionnel     Professionnel  @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  service           Service?       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  reponses          ReponseChamp[]
+}
+
+model ReponseChamp {
+  id           String            @id @default(uuid())
+  champId      String
+  rendezVousId String
+  valeur       String
+  champ        ChampPersonnalise @relation(fields: [champId], references: [id], onDelete: Cascade)
+  rendezVous   RendezVous        @relation(fields: [rendezVousId], references: [id], onDelete: Cascade)
+}
+
+model Disponibilite {
+  id              String        @id @default(uuid())
+  professionnelId String
+  jourSemaine     Int
+  heureDebut      String
+  heureFin        String
+  createdAt       DateTime      @default(now())
+  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  @@index([professionnelId, jourSemaine])
+}
+
+model Indisponibilite {
+  id              String              @id @default(uuid())
+  professionnelId String
+  type            TypeIndisponibilite
+  dateDebut       DateTime
+  dateFin         DateTime
+  motif           String?
+  clientsNotifies Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  professionnel   Professionnel       @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  @@index([professionnelId, dateDebut, dateFin])
+}
+
+model RendezVous {
+  id                String             @id @default(uuid())
+  professionnelId   String
+  serviceId         String
+  clientId          String
+  dateDebut         DateTime
+  dateFin           DateTime
+  statut            StatutRdv          @default(RESERVE)
+  origine           OrigineRdv         @default(EN_LIGNE)
+  remarque          String?
+  motifAnnulation   String?
+  manageToken       String?            @unique
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  changeUsed        Boolean            @default(false)
+  nombreChangements Int                @default(0)
+  historique        HistoriqueStatut[]
+  client            Client             @relation(fields: [clientId], references: [id])
+  professionnel     Professionnel      @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  service           Service            @relation(fields: [serviceId], references: [id])
+  reponsesChamps    ReponseChamp[]
+
+  @@unique([professionnelId, dateDebut])
+  @@index([professionnelId, dateDebut, dateFin])
+  @@index([clientId])
+  @@index([statut])
+}
+
+model HistoriqueStatut {
+  id            String     @id @default(uuid())
+  rendezVousId  String
+  ancienStatut  StatutRdv?
+  nouveauStatut StatutRdv
+  changedBy     String?
+  createdAt     DateTime   @default(now())
+  rendezVous    RendezVous @relation(fields: [rendezVousId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String
+  senderId    String?
+  type        TypeNotification
+  message     String
+  lu          Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  sender    User? @relation("NotificationSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, lu])
+  @@index([senderId])
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  userId          String?
+  action          String
+  cible           String?
+  details         Json?
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+  professionnelId String?
+  user            User?    @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([createdAt])
+  @@index([professionnelId, createdAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  code      String
+  type      TypeToken @default(VERIFICATION_EMAIL)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+}
+
+model NoteClient {
+  id              String        @id
+  professionnelId String
+  clientId        String
+  texte           String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime
+  Client          Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  Professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  @@index([professionnelId, clientId])
+}
+
+model ParametresReservation {
+  id                     String        @id
+  professionnelId        String        @unique
+  intervalleMinutes      Int           @default(10)
+  delaiMinHeures         Int           @default(2)
+  delaiMaxJours          Int           @default(90)
+  seuilAbsences          Int           @default(2)
+  maxRdvParClientParJour Int           @default(1)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime
+  Professionnel          Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+}
+
 enum ModeSupervision {
   ADMIN
   PRESTATAIRE
 }
 
-model SystemConfig {
-  id                String          @id @default(uuid())
-  isConfigured      Boolean         @default(false)
-  modeSupervision   ModeSupervision?
-  domaine           String?         // ex: "Médical", "Juridique", "Coiffure/Beauté"...
-  platformName      String          @default("RendezVousApp")
-  slogan            String?
-  description       String?
-  logoUrl           String?
-  address           String?
-  phone             String?
-  email             String?
-  joursOuvrables    String[]        @default([])
-  horairesGeneraux  String?
-  conditions        String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-}
-
-// --------------------------------------------------------------------------
-// Comptes utilisateurs (Admin / Professionnel / Réceptionniste)
-// Le Client n'a pas de compte (cf. cahier des charges).
-// --------------------------------------------------------------------------
 enum Role {
   ADMIN
   PROFESSIONNEL
@@ -59,135 +324,6 @@ enum StatutCompte {
   DESACTIVE
 }
 
-model User {
-  id                String        @id @default(uuid())
-  email             String        @unique
-  passwordHash      String
-  role              Role
-  statutCompte      StatutCompte  @default(EN_ATTENTE)
-  emailVerifie      Boolean       @default(false)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  lastLoginAt       DateTime?
-
-  professionnel     Professionnel?
-  receptionniste    Receptionniste?
-  auditLogs         AuditLog[]
-  notifications     Notification[]
-  emailTokens       EmailVerificationToken[]
-
-  @@index([role])
-  @@index([statutCompte])
-}
-
-// --------------------------------------------------------------------------
-// Professionnel
-// --------------------------------------------------------------------------
-model Professionnel {
-  id            String   @id @default(uuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  nom           String
-  specialite    String?
-  description   String?
-  adresse       String?
-  telephone     String?
-  photoUrl      String?
-
-  services              Service[]
-  disponibilites        Disponibilite[]
-  indisponibilites      Indisponibilite[]
-  rendezVous            RendezVous[]
-  affectations          Affectation[]
-  champsPersonnalises   ChampPersonnalise[]
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([nom])
-}
-
-// --------------------------------------------------------------------------
-// Réceptionniste + affectation à un ou plusieurs Professionnels avec
-// permissions granulaires (conforme section "Réceptionniste" du CDC).
-// --------------------------------------------------------------------------
-model Receptionniste {
-  id          String   @id @default(uuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  nom         String
-  telephone   String?
-
-  affectations Affectation[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-model Affectation {
-  id                    String         @id @default(uuid())
-  professionnelId       String
-  professionnel         Professionnel  @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
-  receptionnisteId      String
-  receptionniste        Receptionniste @relation(fields: [receptionnisteId], references: [id], onDelete: Cascade)
-
-  peutConsulterAgenda     Boolean @default(true)
-  peutGererRdv            Boolean @default(true)
-  peutGererPlanning       Boolean @default(false)
-  peutGererParametres     Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([professionnelId, receptionnisteId])
-}
-
-// --------------------------------------------------------------------------
-// Client (sans compte) — identifié par téléphone/email pour éviter les doublons
-// --------------------------------------------------------------------------
-model Client {
-  id            String   @id @default(uuid())
-  nom           String
-  prenom        String
-  telephone     String
-  email         String?
-  dateNaissance DateTime?
-
-  rendezVous    RendezVous[]
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@unique([telephone])
-  @@index([nom, prenom])
-}
-
-// --------------------------------------------------------------------------
-// Services + champs personnalisés configurables
-// --------------------------------------------------------------------------
-model Service {
-  id              String   @id @default(uuid())
-  professionnelId String
-  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
-
-  nom             String
-  description     String?
-  dureeMinutes    Int
-  prix            Int?     // en centimes de la devise locale, null si non applicable
-  actif           Boolean  @default(true)
-  imageUrl        String?
-
-  champsPersonnalises ChampPersonnalise[]
-  rendezVous          RendezVous[]
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@index([professionnelId])
-}
-
 enum TypeChamp {
   TEXTE
   NOMBRE
@@ -195,50 +331,9 @@ enum TypeChamp {
   RADIO
   CHECKBOX
   DATE
-}
-
-model ChampPersonnalise {
-  id              String   @id @default(uuid())
-  professionnelId String
-  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
-  serviceId       String?
-  service         Service?  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-
-  label           String
-  type            TypeChamp
-  options         String[] @default([]) // pour SELECTION / RADIO
-  obligatoire     Boolean  @default(false)
-  ordre           Int      @default(0)
-
-  reponses        ReponseChamp[]
-
-  createdAt       DateTime @default(now())
-}
-
-model ReponseChamp {
-  id            String   @id @default(uuid())
-  champId       String
-  champ         ChampPersonnalise @relation(fields: [champId], references: [id], onDelete: Cascade)
-  rendezVousId  String
-  rendezVous    RendezVous @relation(fields: [rendezVousId], references: [id], onDelete: Cascade)
-  valeur        String
-}
-
-// --------------------------------------------------------------------------
-// Disponibilités / Indisponibilités
-// --------------------------------------------------------------------------
-model Disponibilite {
-  id              String   @id @default(uuid())
-  professionnelId String
-  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
-
-  jourSemaine     Int      // 0 = lundi ... 6 = dimanche
-  heureDebut      String   // "09:00"
-  heureFin        String   // "12:00"
-
-  createdAt       DateTime @default(now())
-
-  @@index([professionnelId, jourSemaine])
+  TEXTE_LONG
+  SWITCH
+  FICHIER
 }
 
 enum TypeIndisponibilite {
@@ -247,25 +342,6 @@ enum TypeIndisponibilite {
   PERIODE
 }
 
-model Indisponibilite {
-  id              String   @id @default(uuid())
-  professionnelId String
-  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
-
-  type            TypeIndisponibilite
-  dateDebut       DateTime
-  dateFin         DateTime
-  motif           String?
-  clientsNotifies Boolean  @default(false)
-
-  createdAt       DateTime @default(now())
-
-  @@index([professionnelId, dateDebut, dateFin])
-}
-
-// --------------------------------------------------------------------------
-// Rendez-vous — cœur du moteur de réservation
-// --------------------------------------------------------------------------
 enum StatutRdv {
   RESERVE
   CLIENT_ARRIVE
@@ -281,51 +357,6 @@ enum OrigineRdv {
   PROFESSIONNEL
 }
 
-model RendezVous {
-  id              String   @id @default(uuid())
-  professionnelId String
-  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
-  serviceId       String
-  service         Service  @relation(fields: [serviceId], references: [id])
-  clientId        String
-  client          Client   @relation(fields: [clientId], references: [id])
-
-  dateDebut       DateTime
-  dateFin         DateTime
-  statut          StatutRdv   @default(RESERVE)
-  origine         OrigineRdv  @default(EN_LIGNE)
-  remarque        String?
-  motifAnnulation String?
-
-  manageToken     String?     @unique // permet au client de gérer son RDV sans compte
-
-  reponsesChamps  ReponseChamp[]
-  historique      HistoriqueStatut[]
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  // Empêche deux RDV strictement identiques (même pro, même créneau de début)
-  // La vérification de chevauchement complète est faite en transaction dans le service.
-  @@unique([professionnelId, dateDebut])
-  @@index([professionnelId, dateDebut, dateFin])
-  @@index([clientId])
-  @@index([statut])
-}
-
-model HistoriqueStatut {
-  id           String     @id @default(uuid())
-  rendezVousId String
-  rendezVous   RendezVous @relation(fields: [rendezVousId], references: [id], onDelete: Cascade)
-  ancienStatut StatutRdv?
-  nouveauStatut StatutRdv
-  changedBy    String?    // userId ou "client"
-  createdAt    DateTime   @default(now())
-}
-
-// --------------------------------------------------------------------------
-// Notifications
-// --------------------------------------------------------------------------
 enum TypeNotification {
   NOUVELLE_RESERVATION
   ANNULATION
@@ -340,52 +371,13 @@ enum TypeNotification {
   AUTORISATIONS_MODIFIEES
 }
 
-model Notification {
-  id        String            @id @default(uuid())
-  userId    String
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      TypeNotification
-  message   String
-  lu        Boolean           @default(false)
-  createdAt DateTime          @default(now())
-
-  @@index([userId, lu])
-}
-
-// --------------------------------------------------------------------------
-// Audit — actions sensibles (section 30 du CDC)
-// --------------------------------------------------------------------------
-model AuditLog {
-  id        String   @id @default(uuid())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action    String   // ex: "LOGIN", "RDV_CREATED", "RDV_STATUS_CHANGED", "SUPERVISOR_RESET"...
-  cible     String?  // id de l'entité concernée
-  details   Json?
-  ipAddress String?
-  createdAt DateTime @default(now())
-
-  @@index([action])
-  @@index([createdAt])
-}
-
-// --------------------------------------------------------------------------
-// Vérification email (abstraction sans fournisseur externe — section 24)
-// --------------------------------------------------------------------------
 enum TypeToken {
   VERIFICATION_EMAIL
   RESET_PASSWORD
 }
 
-model EmailVerificationToken {
-  id        String    @id @default(uuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  code      String
-  type      TypeToken @default(VERIFICATION_EMAIL)
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
-
-  @@index([userId, type])
+enum StatutService {
+  DISPONIBLE
+  COMPLET
+  INDISPONIBLE
 }
