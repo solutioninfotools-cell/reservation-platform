@@ -47,7 +47,6 @@ model User {
   emailTokens           EmailVerificationToken[]
   notificationsReceived Notification[]           @relation("NotificationRecipient")
   notificationsSent     Notification[]           @relation("NotificationSender")
-
   professionnel  Professionnel?
   receptionniste Receptionniste?
 
@@ -114,13 +113,19 @@ model Client {
   telephone     String       @unique
   email         String?
   dateNaissance DateTime?
+  adresse       String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
-  adresse       String?
   NoteClient    NoteClient[]
   rendezVous    RendezVous[]
 
   @@index([nom, prenom])
+}
+
+enum StatutService {
+  DISPONIBLE
+  COMPLET
+  INDISPONIBLE
 }
 
 model Service {
@@ -132,9 +137,9 @@ model Service {
   prix                Int?
   actif               Boolean             @default(true)
   imageUrl            String?
+  statut              StatutService       @default(DISPONIBLE)
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
-  statut              StatutService       @default(DISPONIBLE)
   champsPersonnalises ChampPersonnalise[]
   rendezVous          RendezVous[]
   professionnel       Professionnel       @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
@@ -374,10 +379,4 @@ enum TypeNotification {
 enum TypeToken {
   VERIFICATION_EMAIL
   RESET_PASSWORD
-}
-
-enum StatutService {
-  DISPONIBLE
-  COMPLET
-  INDISPONIBLE
 }

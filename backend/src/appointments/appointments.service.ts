@@ -121,7 +121,7 @@ export class AppointmentsService {
         }
 
         const client = await this.clients.findOrCreate(
-          { nom: dto.nom, prenom: dto.prenom, telephone: dto.telephone, email: dto.email, dateNaissance: dto.dateNaissance },
+          { nom: dto.nom, prenom: dto.prenom, telephone: dto.telephone, email: dto.email, dateNaissance: dto.dateNaissance, adresse: dto.adresse },
           tx,
         );
 
@@ -142,8 +142,13 @@ export class AppointmentsService {
         });
 
         if (dto.reponsesChamps) {
-          const entries = Object.entries(dto.reponsesChamps);
-          for (const [champId, valeur] of entries) {
+          const champs = await tx.champPersonnalise.findMany({
+            where: { professionnelId: dto.professionnelId },
+            select: { id: true },
+          });
+          const idsValides = new Set(champs.map((c: any) => c.id));
+          for (const [champId, valeur] of Object.entries(dto.reponsesChamps)) {
+            if (!idsValides.has(champId) || valeur === undefined || valeur === null || valeur === '') continue;
             await tx.reponseChamp.create({ data: { champId, rendezVousId: created.id, valeur: String(valeur) } });
           }
         }
@@ -254,25 +259,87 @@ export class AppointmentsService {
   // ============================================================
   // GESTION PAR LE CLIENT (sans compte) via manageToken (section 17 du CDC)
   // ============================================================
-  async findByManageToken(token: string) {
+  async findByManageToken(token: string, email?: string) {
     const rdv = await this.prisma.rendezVous.findUnique({ where: { manageToken: token }, include: { client: true, service: true, professionnel: true } });
     if (!rdv) throw new NotFoundException('Rendez-vous introuvable pour ce lien.');
+    if (email && rdv.client.email?.toLowerCase().trim() !== email.toLowerCase().trim()) {
+      throw new NotFoundException("Aucun rendez-vous ne correspond à ce code et cet e-mail.");
+    }
     return rdv;
   }
   async cancelByClient(token: string) {
     const rdv = await this.findByManageToken(token);
     if (rdv.statut !== 'RESERVE') throw new BadRequestException('Ce rendez-vous ne peut plus être annulé.');
+
+    const config = await this.prisma.systemConfig.findFirst();
+    const delaiMinHeures = config?.delaiMinAnnulationHeures ?? 0;
+    if (delaiMinHeures > 0) {
+      const heuresRestantes = (rdv.dateDebut.getTime() - Date.now()) / 36e5;
+      if (heuresRestantes < delaiMinHeures) {
+        throw new BadRequestException(`Annulation impossible à moins de ${delaiMinHeures}h du rendez-vous. Merci de contacter directement le cabinet.`);
+      }
+    }
+
     return this.updateStatus(rdv.id, { statut: 'ANNULE', motif: 'Annulé par le client' }, 'client');
   }
 
-  private async notifyProfessionnelEtEquipe(professionnelId: string, type: any, message: string) {
-    const pro = await this.prisma.professionnel.findUnique({ where: { id: professionnelId }, include: { affectations: { include: { receptionniste: true } } } });
-    if (!pro) return;
-    await this.notifications.create(pro.userId, type, message);
-    for (const aff of pro.affectations) {
-      if (aff.peutConsulterAgenda) {
-        await this.notifications.create(aff.receptionniste.userId, type, message);
+  /**
+   * Changement de créneau via le lien public (page Créno) — délai minimum et
+   * nombre de changements autorisés définis par la configuration de la
+   * plateforme (SystemConfig.delaiMinModificationHeures / maxChangementsRdv).
+   */
+  async rescheduleByClient(token: string, dateDebut: string) {
+    const rdv = await this.findByManageToken(token);
+    if (rdv.statut !== 'RESERVE') throw new BadRequestException('Ce rendez-vous ne peut plus être modifié.');
+
+    const config = await this.prisma.systemConfig.findFirst();
+    const maxChangements = config?.maxChangementsRdv ?? 1;
+    if (rdv.nombreChangements >= maxChangements) {
+      throw new BadRequestException(`Ce rendez-vous a déjà été modifié le nombre maximum de fois autorisé (${maxChangements}).`);
+    }
+
+    const delaiMinHeures = config?.delaiMinModificationHeures ?? 48;
+    const heuresRestantes = (rdv.dateDebut.getTime() - Date.now()) / 36e5;
+    if (heuresRestantes < delaiMinHeures) {
+      throw new BadRequestException(`Modification impossible à moins de ${delaiMinHeures}h du rendez-vous. Merci de contacter directement le cabinet.`);
+    }
+
+    const dureeMs = rdv.dateFin.getTime() - rdv.dateDebut.getTime();
+    const newStart = new Date(dateDebut);
+    const newEnd = new Date(newStart.getTime() + dureeMs);
+
+    if (newStart.getTime() < Date.now()) {
+      throw new BadRequestException('Impossible de choisir un créneau déjà passé.');
+    }
+
+    const conflits = await this.prisma.rendezVous.findMany({
+      where: { professionnelId: rdv.professionnelId, id: { not: rdv.id }, statut: { not: 'ANNULE' }, dateDebut: { lt: newEnd }, dateFin: { gt: newStart } },
+    });
+    if (conflits.length) throw new ConflictException('Ce créneau vient d\'être réservé. Merci de choisir un autre horaire.');
+
+    const updated = await this.prisma.rendezVous.update({
+      where: { id: rdv.id },
+      data: { dateDebut: newStart, dateFin: newEnd, nombreChangements: rdv.nombreChangements + 1 },
+      include: { client: true, service: true, professionnel: true },
+    });
+    await this.audit.log({ action: 'RDV_RESCHEDULED_BY_CLIENT', cible: rdv.id, details: { newStart } });
+    this.events.rdvUpdated(rdv.professionnelId, updated);
+    return updated;
+  }
+
+  private async notifyProfessionnelEtEquipe(professionnelId: string, type: any, message: string, senderId?: string) {
+    try {
+      const pro = await this.prisma.professionnel.findUnique({ where: { id: professionnelId }, include: { affectations: { include: { receptionniste: true } } } });
+      if (!pro) return;
+      await this.notifications.create({ recipientId: pro.userId, senderId }, type, message);
+      for (const aff of pro.affectations) {
+        if (aff.peutConsulterAgenda) {
+          await this.notifications.create({ recipientId: aff.receptionniste.userId, senderId }, type, message);
+        }
       }
+    } catch (e: any) {
+      // Une notification qui échoue ne doit jamais faire échouer l'opération métier (statut/rdv déjà persisté).
+      console.warn('[notifyProfessionnelEtEquipe] échec notification:', e?.message);
     }
   }
 }

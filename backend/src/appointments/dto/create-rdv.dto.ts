@@ -5,23 +5,19 @@ import {
   IsString
 } from 'class-validator';
 
-
 export class CreateRdvDto {
 
   @ApiProperty()
   @IsString()
   professionnelId!: string;
 
-
   @ApiProperty()
   @IsString()
   serviceId!: string;
 
-
   @ApiProperty()
   @IsString()
   dateDebut!: string;
-
 
   // =========================
   // CLIENT
@@ -31,34 +27,28 @@ export class CreateRdvDto {
   @IsString()
   nom!: string;
 
-
   @ApiProperty()
   @IsString()
   prenom!: string;
 
-
   @ApiProperty()
   @IsString()
   telephone!: string;
-
 
   @ApiProperty({ required: false })
   @IsOptional()
   @IsEmail()
   email?: string;
 
-
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
   dateNaissance?: string;
 
-
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
   adresse?: string;
-
 
   // =========================
   // RENDEZ-VOUS
@@ -69,7 +59,6 @@ export class CreateRdvDto {
   @IsString()
   remarque?: string;
 
-
   @ApiProperty({
     required: false,
     description:
@@ -77,5 +66,4 @@ export class CreateRdvDto {
   })
   @IsOptional()
   reponsesChamps?: Record<string, string>;
-
 }

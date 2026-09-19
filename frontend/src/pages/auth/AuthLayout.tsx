@@ -153,7 +153,7 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
               ← Retour à l'accueil
             </Link>
             <div className="flex items-center gap-3 mb-8">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-primary-dark text-white font-extrabold flex items-center justify-center">R</div>
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-primary-dark text-white font-extrabold flex items-center justify-center ring-4 ring-primary-tint/60">R</div>
               <div className="font-extrabold text-lg">RendezVousApp</div>
             </div>
             <h1 className="text-xl font-extrabold mb-1">Connexion</h1>
@@ -165,7 +165,7 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
                 type="email"
                 placeholder="Adresse e-mail"
                 required
-                className="w-full border border-line rounded-lg px-3 py-2.5 text-sm bg-paper focus:outline-none focus:border-primary"
+                className="w-full border border-line rounded-lg px-3 py-2.5 text-sm bg-paper focus:outline-none focus:border-primary-light focus:ring-4 focus:ring-primary-tint transition"
               />
               <input
                 value={loginPassword}
@@ -173,13 +173,13 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
                 type="password"
                 placeholder="Mot de passe"
                 required
-                className="w-full border border-line rounded-lg px-3 py-2.5 text-sm bg-paper focus:outline-none focus:border-primary"
+                className="w-full border border-line rounded-lg px-3 py-2.5 text-sm bg-paper focus:outline-none focus:border-primary-light focus:ring-4 focus:ring-primary-tint transition"
               />
               {loginError && <div className="text-status-annule text-xs font-semibold">{loginError}</div>}
               <button
                 disabled={loginLoading}
                 type="submit"
-                className="w-full py-3 rounded-xl bg-primary text-white font-bold text-sm disabled:opacity-50 hover:bg-primary-dark transition"
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-primary-light text-white font-bold text-sm disabled:opacity-50 hover:from-primary-dark hover:to-primary transition"
               >
                 {loginLoading ? 'Connexion…' : 'Se connecter'}
               </button>
@@ -203,7 +203,7 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
               ← Retour à l'accueil
             </Link>
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-primary-dark text-white font-extrabold flex items-center justify-center">R</div>
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-primary-dark text-white font-extrabold flex items-center justify-center ring-4 ring-primary-tint/60">R</div>
               <div className="font-extrabold text-lg">RendezVousApp</div>
             </div>
 
@@ -272,7 +272,11 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
 
                     {registerError && <div className="text-status-annule text-xs font-semibold">{registerError}</div>}
 
-                    <Button type="submit" disabled={registerLoading} className="w-full justify-center mt-2">
+                    <Button
+                      type="submit"
+                      disabled={registerLoading}
+                      className="w-full justify-center mt-2 bg-gradient-to-r from-primary to-primary-light hover:from-primary-dark hover:to-primary"
+                    >
                       {registerLoading ? 'Création…' : 'Créer mon compte'}
                     </Button>
                   </form>
@@ -291,7 +295,7 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
 
         {/* ---------- PANNEAU DE BASCULE (desktop) ---------- */}
         <div className="auth-toggle-box hidden md:block absolute w-full h-full">
-          <div className="auth-toggle-shape bg-primary" />
+          <div className="auth-toggle-shape bg-gradient-to-br from-primary via-primary-light to-primary-dark" />
 
           <div className="auth-toggle-panel toggle-left absolute w-1/2 h-full text-white flex flex-col justify-center items-center z-[2] px-8 text-center">
             <h1 className="text-3xl font-extrabold mb-2">Bienvenue !</h1>

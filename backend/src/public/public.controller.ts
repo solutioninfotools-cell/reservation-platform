@@ -30,12 +30,17 @@ export class PublicController {
   }
 
   @Get('rendez-vous/:token')
-  getByToken(@Param('token') token: string) {
-    return this.appointments.findByManageToken(token);
+  getByToken(@Param('token') token: string, @Query('email') email?: string) {
+    return this.appointments.findByManageToken(token, email);
   }
 
   @Post('rendez-vous/:token/annuler')
   cancelByClient(@Param('token') token: string) {
     return this.appointments.cancelByClient(token);
+  }
+
+  @Post('rendez-vous/:token/modifier')
+  rescheduleByClient(@Param('token') token: string, @Body('dateDebut') dateDebut: string) {
+    return this.appointments.rescheduleByClient(token, dateDebut);
   }
 }

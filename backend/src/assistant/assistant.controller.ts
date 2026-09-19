@@ -7,8 +7,12 @@ import { AssistantService } from './assistant.service';
 export class AssistantController {
   constructor(private assistant: AssistantService) {}
 
-  @Post('ask')
-  ask(@Body('question') question: string, @Body('professionnelId') professionnelId?: string) {
-    return this.assistant.answer(question, professionnelId);
-  }
+@Post('ask')
+ask(
+  @Body('question') question: string,
+  @Body('professionnelId') professionnelId?: string,
+  @Body('mode') mode?: 'public' | 'pro',
+) {
+  return this.assistant.answer(question, professionnelId, mode);
+}
 }

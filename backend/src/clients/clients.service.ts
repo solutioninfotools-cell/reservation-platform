@@ -7,6 +7,7 @@ export interface ClientInputDto {
   telephone: string;
   email?: string;
   dateNaissance?: string;
+  adresse?: string;
 }
 
 @Injectable()
@@ -29,6 +30,7 @@ export class ClientsService {
           prenom: input.prenom || existing.prenom,
           email: input.email ?? existing.email,
           dateNaissance: input.dateNaissance ? new Date(input.dateNaissance) : existing.dateNaissance,
+          adresse: input.adresse ?? existing.adresse,
         },
       });
     }
@@ -39,6 +41,7 @@ export class ClientsService {
         telephone: input.telephone,
         email: input.email,
         dateNaissance: input.dateNaissance ? new Date(input.dateNaissance) : undefined,
+        adresse: input.adresse,
       },
     });
   }

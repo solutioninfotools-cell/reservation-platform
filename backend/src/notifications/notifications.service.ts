@@ -25,6 +25,22 @@ export class NotificationsService {
     });
   }
 
+  /**
+   * Crée une notification pour un destinataire (recipientId), avec un émetteur
+   * optionnel (senderId) — ex. la réceptionniste qui a déclenché l'action.
+   * Le 1er paramètre accepte soit une string (recipientId, forme rétro-compatible
+   * avec les appels existants), soit un objet complet.
+   */
+  async create(
+    recipient: string | { recipientId: string; senderId?: string | null },
+    type: TypeNotification,
+    message: string,
+  ) {
+    const recipientId = typeof recipient === 'string' ? recipient : recipient.recipientId;
+    const senderId = typeof recipient === 'string' ? undefined : recipient.senderId ?? undefined;
+    return this.pushNotification(recipientId, type, message, senderId);
+  }
+
   async listForUser(userId: string) {
     return this.prisma.notification.findMany({
       where: {
@@ -64,19 +80,7 @@ export class NotificationsService {
       }
     });
   }
-async create(
-  recipientId: string,
-  type: TypeNotification,
-  message: string,
-  senderId?: string
-) {
-  return this.pushNotification(
-    recipientId,
-    type,
-    message,
-    senderId
-  );
-}
+
   async markOneRead(
     userId: string,
     notificationId: string
