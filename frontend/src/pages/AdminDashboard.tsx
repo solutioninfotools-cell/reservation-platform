@@ -1231,6 +1231,159 @@ export default function AdminDashboard() {
   }
 
   /* =========================================================
+     PAGE : ABSENCES ET INDISPONIBILITÉS (tous professionnels)
+     ========================================================= */
+  window.renderAbsencesPage = function renderAbsencesPage() {
+    const f = state.indispoFilter;
+    document.getElementById("page-absences").innerHTML = `
+      <div class="page-head">
+        <div><h1 class="page-title">Absences</h1><p class="page-sub">Indisponibilités déclarées par les professionnels, tous espaces confondus</p></div>
+        <button class="btn btn-ghost btn-sm" onclick="exportAbsencesCsv()">${iconPrinter()} Exporter</button>
+      </div>
+      <div class="filter-row">
+        <select onchange="updateIndispoFilter('professionnelId', this.value)"><option value="">Tous les professionnels</option>${PROS.map((pr) => `<option value="${pr.id}" ${f.professionnelId === pr.id ? "selected" : ""}>${esc(pr.name)}</option>`).join("")}</select>
+        <select onchange="updateIndispoFilter('type', this.value)"><option value="">Tous les types</option>${Object.entries(TYPE_INDISPO).map(([k, v]) => `<option value="${k}" ${f.type === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+        <input type="date" value="${f.from}" onchange="updateIndispoFilter('from', this.value)" title="À partir du" />
+        <input type="date" value="${f.to}" onchange="updateIndispoFilter('to', this.value)" title="Jusqu'au" />
+        <button class="btn btn-ghost btn-sm" onclick="resetIndispoFilter()">Réinitialiser</button>
+      </div>
+      <div class="field-hint" style="margin-bottom:12px;">Sans filtre de date, seules les absences en cours ou à venir sont affichées.</div>
+      <div class="card"><table class="data-table"><thead><tr><th>Professionnel</th><th>Type</th><th>Du</th><th>Au</th><th>Motif</th><th>Clients prévenus</th><th></th></tr></thead><tbody id="absencesTableBody"></tbody></table></div>
+    `;
+    reloadIndispos();
+  }
+  window.updateIndispoFilter = function updateIndispoFilter(k, v) { state.indispoFilter[k] = v; reloadIndispos(); }
+  window.resetIndispoFilter = function resetIndispoFilter() {
+    state.indispoFilter = { professionnelId: "", type: "", from: "", to: "" };
+    renderAbsencesPage();
+  }
+  window.reloadIndispos = async function reloadIndispos() {
+    try {
+      const f = state.indispoFilter;
+      INDISPOS = await adminApi.listIndisponibilites({
+        professionnelId: f.professionnelId || undefined, type: f.type || undefined,
+        from: f.from || undefined, to: f.to || undefined,
+      });
+      renderAbsencesTable();
+    } catch (e) { showError(e); }
+  }
+  window.renderAbsencesTable = function renderAbsencesTable() {
+    const body = document.getElementById("absencesTableBody");
+    if (!body) return;
+    if (!INDISPOS.length) { body.innerHTML = `<tr><td colspan="7"><div class="table-empty">Aucune absence sur cette période</div></td></tr>`; return; }
+    const now = Date.now();
+    body.innerHTML = INDISPOS.map((i) => {
+      const enCours = new Date(i.dateDebut).getTime() <= now && new Date(i.dateFin).getTime() >= now;
+      return `<tr>
+        <td><div class="cell-client"><div class="avatar-sm" style="background:${colorFor(i.professionnelId)}">${initials(i.professionnel)}</div><div><div class="cell-client-name">${esc(i.professionnel)}</div><div class="cell-client-sub">${esc(i.specialite || "—")}</div></div></div></td>
+        <td><span class="status-pill ${enCours ? "st-annule" : "st-absent"}">${TYPE_INDISPO[i.type] || i.type}${enCours ? " · en cours" : ""}</span></td>
+        <td>${fmtDateTime(i.dateDebut)}</td><td>${fmtDateTime(i.dateFin)}</td>
+        <td>${esc(i.motif || "—")}</td>
+        <td>${i.clientsNotifies ? `<span class="status-pill st-termine">Oui</span>` : `<span class="status-pill st-encours">Non</span>`}</td>
+        <td><div class="row-actions"><button class="icon-btn" title="Consulter l'agenda de ce jour" onclick="openAgenda('${i.professionnelId}','${toDay(i.dateDebut)}')">${iconCal()}</button></div></td>
+      </tr>`;
+    }).join("");
+  }
+  window.exportAbsencesCsv = function exportAbsencesCsv() {
+    const f = state.indispoFilter;
+    exportCsv("indisponibilites", "absences.csv", {
+      professionnelId: f.professionnelId || undefined, type: f.type || undefined,
+      from: f.from || undefined, to: f.to || undefined,
+    });
+  }
+
+  /* =========================================================
+     PAGE : DOMAINES D'ACTIVITÉ
+     ========================================================= */
+  window.renderDomainesPage = function renderDomainesPage() {
+    const sansDomaine = PROS.filter((pr) => !pr.domaineId).length;
+    document.getElementById("page-domaines").innerHTML = `
+      <div class="page-head">
+        <div><h1 class="page-title">Domaines d'activité</h1><p class="page-sub">Classement des professionnels et filtres proposés sur la page publique</p></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="openDomaineForm()">${iconPlus()} Nouveau domaine</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportCsv('domaines','domaines.csv')">${iconPrinter()} Exporter</button>
+        </div>
+      </div>
+      ${sansDomaine ? `<div class="card" style="background:#FDF1E2;border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
+        ${iconAlert()} ${sansDomaine} professionnel(s) ne sont rattachés à aucun domaine.
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="filtrerProsSansDomaine()">Les classer</button>
+      </div>` : ""}
+      <div class="card"><table class="data-table"><thead><tr><th>Domaine</th><th>Description</th><th>Professionnels</th><th>Visibilité</th><th>Ordre</th><th></th></tr></thead><tbody id="domainesTableBody"></tbody></table></div>
+    `;
+    renderDomainesTable();
+  }
+  window.renderDomainesTable = function renderDomainesTable() {
+    const body = document.getElementById("domainesTableBody");
+    if (!body) return;
+    if (!DOMAINES.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucun domaine défini — créez-en un pour classer vos professionnels</div></td></tr>`; return; }
+    body.innerHTML = DOMAINES.map((d) => `<tr>
+      <td><div class="cell-client-name">${esc(d.nom)}</div></td>
+      <td style="color:var(--ink-soft);font-size:12px;">${esc(d.description || "—")}</td>
+      <td>${d.nbProfessionnels}</td>
+      <td><span class="status-pill ${d.actif ? "st-termine" : "st-absent"}">${d.actif ? "Visible" : "Masqué"}</span></td>
+      <td>${d.ordre}</td>
+      <td><div class="row-actions">
+        <button class="icon-btn" title="Modifier" onclick="openDomaineForm('${d.id}')">${iconEdit()}</button>
+        <button class="icon-btn" title="${d.actif ? "Masquer" : "Rendre visible"}" onclick="toggleDomaineActif('${d.id}', ${d.actif ? "false" : "true"})">${d.actif ? iconX() : iconCheck()}</button>
+        ${d.nbProfessionnels === 0 ? `<button class="icon-btn" title="Supprimer" onclick="askDeleteDomaine('${d.id}','${escArg(d.nom)}')">${iconTrash()}</button>` : ""}
+      </div></td>
+    </tr>`).join("");
+  }
+  /** Sans `id` : création. Avec : modification du domaine existant. */
+  window.openDomaineForm = function openDomaineForm(id) {
+    const d = id ? DOMAINES.find((x) => x.id === id) : null;
+    if (id && !d) { showToast("Domaine introuvable — actualisez la page"); return; }
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">${d ? "Modifier le domaine" : "Nouveau domaine d'activité"}</p><p class="modal-sub">${d ? esc(d.nom) : "Ex. Santé, Beauté, Conseil juridique…"}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-row"><label>Nom du domaine *</label><input type="text" id="dmNom" value="${esc(d?.nom || "")}" placeholder="Ex. Santé" /></div>
+      <div class="field-row"><label>Description</label><textarea id="dmDesc" rows="2" placeholder="Courte description affichée côté public">${esc(d?.description || "")}</textarea></div>
+      <div class="field-2col">
+        <div class="field-row"><label>Ordre d'affichage</label><input type="number" min="0" id="dmOrdre" value="${d?.ordre ?? 0}" /></div>
+        <div class="field-row"><label>Visibilité</label><select id="dmActif"><option value="true" ${d && !d.actif ? "" : "selected"}>Visible</option><option value="false" ${d && !d.actif ? "selected" : ""}>Masqué</option></select></div>
+      </div>
+      <div class="field-hint">Un domaine masqué n'est plus proposé à la création de compte, mais les professionnels déjà rattachés le restent.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveDomaine(${d ? `'${d.id}'` : "null"})">${iconCheck()} ${d ? "Enregistrer" : "Créer le domaine"}</button></div>
+    `);
+  }
+  window.saveDomaine = async function saveDomaine(id) {
+    const nom = val("dmNom");
+    if (nom.length < 2) { showToast("Le nom du domaine doit contenir au moins 2 caractères"); return; }
+    const data = { nom, description: val("dmDesc"), ordre: Number(val("dmOrdre")) || 0, actif: val("dmActif") !== "false" };
+    try {
+      if (id) await adminApi.updateDomaine(id, data); else await adminApi.createDomaine(data);
+      closeModal();
+      await loadAll();
+      renderPage(state.page);
+      showToast(id ? "Domaine mis à jour" : `Domaine « ${esc(nom)} » créé`);
+    } catch (e) { showError(e); }
+  }
+  window.toggleDomaineActif = async function toggleDomaineActif(id, actif) {
+    try {
+      await adminApi.updateDomaine(id, { actif });
+      await loadAll();
+      renderPage(state.page);
+      showToast(actif ? "Domaine rendu visible" : "Domaine masqué");
+    } catch (e) { showError(e); }
+  }
+  window.askDeleteDomaine = function askDeleteDomaine(id, nom) {
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Supprimer le domaine</p><p class="modal-sub">${esc(nom)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-hint" style="margin-bottom:14px;">La suppression est refusée dès qu'un professionnel y est rattaché : masquez le domaine à la place.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-danger-ghost" onclick="confirmDeleteDomaine('${id}')">${iconTrash()} Supprimer</button></div>
+    `);
+  }
+  window.confirmDeleteDomaine = async function confirmDeleteDomaine(id) {
+    try {
+      await adminApi.deleteDomaine(id);
+      closeModal();
+      await loadAll();
+      renderPage(state.page);
+      showToast("Domaine supprimé");
+    } catch (e) { showError(e); }
+  }
+
+  /* =========================================================
      PAGE : PARAMÈTRES GÉNÉRAUX DE LA PLATEFORME
      ========================================================= */
   window.renderParamsPage = function renderParamsPage() {
@@ -1303,7 +1456,7 @@ export default function AdminDashboard() {
   window.renderAuditPage = function renderAuditPage() {
     const f = state.auditFilter;
     document.getElementById("page-audit").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Journal d'audit</h1><p class="page-sub">Traçabilité des actions sensibles de la plateforme</p></div><button class="btn btn-ghost btn-sm" onclick="exportCsv('audit','journal-audit.csv')">${iconPrinter()} Exporter</button></div>
+      <div class="page-head"><div><h1 class="page-title">Journal d'audit</h1><p class="page-sub">Traçabilité des actions sensibles de la plateforme</p></div><button class="btn btn-ghost btn-sm" onclick="exportAuditCsv()">${iconPrinter()} Exporter</button></div>
       <div class="filter-row">
         <select onchange="updateAuditFilter('action', this.value)"><option value="">Toutes les actions</option>${AUDIT.actions.map((a) => `<option value="${a}" ${f.action === a ? "selected" : ""}>${a}</option>`).join("")}</select>
         <input type="date" value="${f.from}" onchange="updateAuditFilter('from', this.value)" title="À partir du" />
@@ -1313,6 +1466,10 @@ export default function AdminDashboard() {
       <div id="auditFooter" style="padding:12px 2px;font-size:12px;color:var(--ink-soft);"></div>
     `;
     reloadAudit();
+  }
+  window.exportAuditCsv = function exportAuditCsv() {
+    const f = state.auditFilter;
+    exportCsv("audit", "journal-audit.csv", { action: f.action || undefined, from: f.from || undefined, to: f.to || undefined });
   }
   window.updateAuditFilter = function updateAuditFilter(k, v) { state.auditFilter[k] = v; state.auditFilter.skip = 0; reloadAudit(); }
   window.reloadAudit = async function reloadAudit(append) {
@@ -1357,9 +1514,39 @@ export default function AdminDashboard() {
   }
   window.renderNotifsPage = function renderNotifsPage() {
     document.getElementById("page-notifs").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Notifications</h1><p class="page-sub">Inscriptions en attente et événements de la plateforme</p></div><div style="display:flex;gap:8px;"><button class="btn btn-ghost btn-sm" onclick="refreshAll()">${iconRefresh()} Actualiser</button><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Tout marquer comme lu</button></div></div>
+      <div class="page-head"><div><h1 class="page-title">Notifications</h1><p class="page-sub">Inscriptions en attente, événements de la plateforme et annonces diffusées</p></div><div style="display:flex;gap:8px;"><button class="btn btn-primary btn-sm" onclick="openAnnonce()">${iconSend()} Nouvelle annonce</button><button class="btn btn-ghost btn-sm" onclick="refreshAll()">${iconRefresh()} Actualiser</button><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Tout marquer comme lu</button></div></div>
       <div class="card">${NOTIFS.length ? NOTIFS.map((n) => notifRowHtml(n)).join("") : `<div class="table-empty">Aucune notification</div>`}</div>
     `;
+  }
+  /**
+   * Annonce diffusée par l'Admin. Appelée sans argument depuis la page
+   * Notifications, ou avec `scope` ("pros" / "recs") pour n'écrire qu'aux
+   * comptes cochés dans le tableau correspondant.
+   */
+  window.openAnnonce = function openAnnonce(scope) {
+    const selection = scope ? [...SELECTION[scope]] : [];
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Diffuser une annonce</p><p class="modal-sub">${selection.length ? `${selection.length} destinataire(s) sélectionné(s)` : "Notification interne, visible dans l'espace de chaque destinataire"}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      ${selection.length
+        ? `<div class="field-hint" style="margin-bottom:14px;">L'annonce sera envoyée aux ${selection.length} compte(s) cochés dans le tableau.</div>`
+        : `<div class="field-row"><label>Destinataires</label><select id="anCible">${Object.entries(CIBLES_ANNONCE).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></div>`}
+      <div class="field-row"><label>Message *</label><textarea id="anMsg" rows="4" placeholder="Ex. Maintenance prévue dimanche de 8 h à 10 h : la prise de rendez-vous en ligne sera suspendue."></textarea></div>
+      <div class="field-hint">Seuls les comptes actifs reçoivent l'annonce. Elle est tracée dans le journal d'audit.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="sendAnnonce(${scope ? `'${scope}'` : "null"})">${iconSend()} Envoyer</button></div>
+    `);
+  }
+  window.sendAnnonce = async function sendAnnonce(scope) {
+    const message = val("anMsg");
+    if (message.length < 3) { showToast("Saisissez le message à diffuser"); return; }
+    const selection = scope ? [...SELECTION[scope]] : [];
+    const payload = selection.length
+      ? { cible: "SELECTION", userIds: selection, message }
+      : { cible: document.getElementById("anCible")?.value || "TOUS", message };
+    try {
+      const res = await adminApi.envoyerAnnonce(payload);
+      closeModal();
+      showToast(esc(res.message));
+    } catch (e) { showError(e); }
   }
   window.markAllRead = async function markAllRead() {
     try {
@@ -1374,8 +1561,9 @@ export default function AdminDashboard() {
   /* =========================================================
      EXPORTS CSV
      ========================================================= */
-  window.exportCsv = async function exportCsv(entity, filename) {
-    try { await adminApi.downloadExport(entity, filename); showToast(`${iconPrinter()} Export « ${filename} » téléchargé`); }
+  // `params` = les filtres de la page : l'export reprend ce qui est affiché.
+  window.exportCsv = async function exportCsv(entity, filename, params) {
+    try { await adminApi.downloadExport(entity, filename, params); showToast(`${iconPrinter()} Export « ${filename} » téléchargé`); }
     catch (e) { showError(e); }
   }
 
@@ -1450,6 +1638,10 @@ export default function AdminDashboard() {
       delete (window as any).iconBriefcase;
       delete (window as any).iconCal;
       delete (window as any).iconAlert;
+      delete (window as any).iconTag;
+      delete (window as any).iconSend;
+      delete (window as any).iconClock;
+      delete (window as any).iconMail;
       delete (window as any).iconChevronLeft;
       delete (window as any).iconChevronRight;
       delete (window as any).renderDashboard;
@@ -1457,7 +1649,20 @@ export default function AdminDashboard() {
       delete (window as any).updateProFilter;
       delete (window as any).reloadPros;
       delete (window as any).renderProsTable;
+      delete (window as any).exportProsCsv;
+      delete (window as any).filtrerProsSansDomaine;
+      delete (window as any).toggleSelection;
+      delete (window as any).toggleAllSelection;
+      delete (window as any).renderBulkBar;
+      delete (window as any).applyBulkStatut;
       delete (window as any).openProFiche;
+      delete (window as any).openEditPro;
+      delete (window as any).saveEditPro;
+      delete (window as any).openEditRec;
+      delete (window as any).saveEditRec;
+      delete (window as any).openChangeEmail;
+      delete (window as any).saveChangeEmail;
+      delete (window as any).setProDomaine;
       delete (window as any).setCompteStatut;
       delete (window as any).openCreateCompte;
       delete (window as any).saveCompte;
@@ -1469,6 +1674,7 @@ export default function AdminDashboard() {
       delete (window as any).updateRecFilter;
       delete (window as any).reloadRecs;
       delete (window as any).renderRecTable;
+      delete (window as any).exportRecsCsv;
       delete (window as any).openAffectForm;
       delete (window as any).saveAffect;
       delete (window as any).openPermissions;
@@ -1482,6 +1688,10 @@ export default function AdminDashboard() {
       delete (window as any).reloadClients;
       delete (window as any).renderClientsTable;
       delete (window as any).openClientFiche;
+      delete (window as any).openEditClient;
+      delete (window as any).saveEditClient;
+      delete (window as any).askDeleteClient;
+      delete (window as any).confirmDeleteClient;
       delete (window as any).renderRdvPage;
       delete (window as any).updateRdvFilter;
       delete (window as any).resetRdvFilter;
@@ -1489,6 +1699,9 @@ export default function AdminDashboard() {
       delete (window as any).renderRdvTable;
       delete (window as any).loadMoreRdv;
       delete (window as any).openRdvFiche;
+      delete (window as any).exportRdvCsv;
+      delete (window as any).openDeplacerRdv;
+      delete (window as any).confirmDeplacerRdv;
       delete (window as any).openAnnulerRdv;
       delete (window as any).confirmAnnulerRdv;
       delete (window as any).renderServicesPage;
@@ -1496,8 +1709,25 @@ export default function AdminDashboard() {
       delete (window as any).reloadServices;
       delete (window as any).renderServicesTable;
       delete (window as any).toggleServiceStatut;
+      delete (window as any).exportServicesCsv;
+      delete (window as any).setServiceDisponibilite;
+      delete (window as any).askDeleteService;
+      delete (window as any).confirmDeleteService;
       delete (window as any).renderAgendasPage;
       delete (window as any).openAgenda;
+      delete (window as any).renderAbsencesPage;
+      delete (window as any).updateIndispoFilter;
+      delete (window as any).resetIndispoFilter;
+      delete (window as any).reloadIndispos;
+      delete (window as any).renderAbsencesTable;
+      delete (window as any).exportAbsencesCsv;
+      delete (window as any).renderDomainesPage;
+      delete (window as any).renderDomainesTable;
+      delete (window as any).openDomaineForm;
+      delete (window as any).saveDomaine;
+      delete (window as any).toggleDomaineActif;
+      delete (window as any).askDeleteDomaine;
+      delete (window as any).confirmDeleteDomaine;
       delete (window as any).renderParamsPage;
       delete (window as any).savePlatform;
       delete (window as any).renderAuditPage;
@@ -1505,8 +1735,11 @@ export default function AdminDashboard() {
       delete (window as any).reloadAudit;
       delete (window as any).loadMoreAudit;
       delete (window as any).renderAuditTable;
+      delete (window as any).exportAuditCsv;
       delete (window as any).notifRowHtml;
       delete (window as any).renderNotifsPage;
+      delete (window as any).openAnnonce;
+      delete (window as any).sendAnnonce;
       delete (window as any).markAllRead;
       delete (window as any).exportCsv;
       delete (window as any).closeModal;
@@ -1837,7 +2070,15 @@ export default function AdminDashboard() {
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           <span className="nav-label">Agendas</span>
         </div>
+        <div className="nav-item" data-page="absences">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span className="nav-label">Absences</span>
+        </div>
         <div className="sb-section-title">Plateforme</div>
+        <div className="nav-item" data-page="domaines">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          <span className="nav-label">Domaines d&apos;activité</span>
+        </div>
         <div className="nav-item" data-page="params">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <span className="nav-label">Paramètres généraux</span>
@@ -1889,6 +2130,8 @@ export default function AdminDashboard() {
       <section className="page" id="page-rdv"></section>
       <section className="page" id="page-services"></section>
       <section className="page" id="page-agendas"></section>
+      <section className="page" id="page-absences"></section>
+      <section className="page" id="page-domaines"></section>
       <section className="page" id="page-params"></section>
       <section className="page" id="page-audit"></section>
       <section className="page" id="page-notifs"></section>

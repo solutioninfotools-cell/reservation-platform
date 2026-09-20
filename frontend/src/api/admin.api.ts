@@ -8,13 +8,17 @@ import { api } from './client';
  */
 export const adminApi = {
   // ---- Professionnels ----
-  listPros: (params?: { statut?: string; search?: string }) =>
+  listPros: (params?: { statut?: string; search?: string; domaineId?: string }) =>
     api.get('/admin/professionnels', { params }).then((r) => r.data),
   getPro: (id: string) => api.get(`/admin/professionnels/${id}`).then((r) => r.data),
   updatePro: (
     id: string,
     data: Partial<{ nom: string; specialite: string; telephone: string; adresse: string; description: string; photoUrl: string }>,
   ) => api.patch(`/admin/professionnels/${id}`, data).then((r) => r.data),
+
+  // `null` détache le professionnel de tout domaine.
+  setProDomaine: (id: string, domaineId: string | null) =>
+    api.patch(`/admin/professionnels/${id}/domaine`, { domaineId }).then((r) => r.data),
 
   // ---- Réceptionnistes ----
   listRecs: (params?: { statut?: string; search?: string }) =>
@@ -37,6 +41,7 @@ export const adminApi = {
     nom: string;
     telephone?: string;
     specialite?: string;
+    domaineId?: string;
   }) => api.post('/admin/comptes', data).then((r) => r.data),
   resetPassword: (userId: string, password: string) =>
     api.patch(`/admin/comptes/${userId}/mot-de-passe`, { password }).then((r) => r.data),
@@ -60,6 +65,14 @@ export const adminApi = {
       peutGererParametres: boolean;
     }>,
   ) => api.patch(`/admin/affectations/${affectationId}/permissions`, permissions).then((r) => r.data),
+
+  // ---- Domaines d'activité ----
+  listDomaines: () => api.get('/admin/domaines').then((r) => r.data),
+  createDomaine: (data: { nom: string; description?: string; actif?: boolean; ordre?: number }) =>
+    api.post('/admin/domaines', data).then((r) => r.data),
+  updateDomaine: (id: string, data: Partial<{ nom: string; description: string; actif: boolean; ordre: number }>) =>
+    api.patch(`/admin/domaines/${id}`, data).then((r) => r.data),
+  deleteDomaine: (id: string) => api.delete(`/admin/domaines/${id}`).then((r) => r.data),
 
   // ---- Annonces (notification interne diffusée par l'Admin) ----
   envoyerAnnonce: (data: {

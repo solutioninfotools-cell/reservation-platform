@@ -28,6 +28,16 @@ async function main() {
     },
   });
 
+  // Domaines d'activité de départ (gérés ensuite depuis l'espace Admin).
+  const domaines = await Promise.all(
+    [
+      { nom: 'Santé', description: 'Médecine générale, spécialistes, paramédical', ordre: 0 },
+      { nom: 'Beauté et bien-être', description: 'Coiffure, esthétique, massage', ordre: 1 },
+      { nom: 'Conseil', description: 'Juridique, comptable, orientation', ordre: 2 },
+    ].map((d) => prisma.domaine.upsert({ where: { nom: d.nom }, update: {}, create: d })),
+  );
+  const domaineSante = domaines[0];
+
   const admin = await prisma.user.upsert({
     where: { email: 'admin@rendezvousapp.com' },
     update: {},
@@ -39,7 +49,12 @@ async function main() {
     update: {},
     create: {
       email: 'ahmed.benali@rendezvousapp.com', passwordHash, role: 'PROFESSIONNEL', statutCompte: 'ACTIF', emailVerifie: true,
-      professionnel: { create: { nom: 'Dr. Ahmed Benali', specialite: 'Médecin généraliste', adresse: config.address, telephone: '0555 10 20 30' } },
+      professionnel: {
+        create: {
+          nom: 'Dr. Ahmed Benali', specialite: 'Médecin généraliste',
+          adresse: config.address, telephone: '0555 10 20 30', domaineId: domaineSante.id,
+        },
+      },
     },
     include: { professionnel: true },
   });

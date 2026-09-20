@@ -65,6 +65,9 @@ model Professionnel {
   adresse             String?
   telephone           String?
   photoUrl            String?
+  /// Domaine d'activité auquel l'Admin rattache le professionnel (CDC I.14).
+  /// Facultatif : un professionnel peut rester non classé.
+  domaineId           String?
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
   affectations        Affectation[]
@@ -74,10 +77,29 @@ model Professionnel {
   notesClients        NoteClient[]
   parametres          ParametresReservation?
   user                User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  domaine             Domaine?               @relation(fields: [domaineId], references: [id], onDelete: SetNull)
   rendezVous          RendezVous[]
   services            Service[]
 
   @@index([nom])
+  @@index([domaineId])
+}
+
+/// Domaines d'activité de la plateforme (Santé, Beauté, Conseil…), gérés par
+/// l'Admin (CDC I.14). Ils classent les professionnels et alimentent les filtres
+/// de la page publique. Un domaine encore utilisé ne peut pas être supprimé : il
+/// est masqué (`actif = false`) pour ne plus être proposé.
+model Domaine {
+  id             String          @id @default(uuid())
+  nom            String          @unique
+  description    String?
+  actif          Boolean         @default(true)
+  ordre          Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  professionnels Professionnel[]
+
+  @@index([actif, ordre])
 }
 
 model Receptionniste {
@@ -406,8 +428,13 @@ enum TypeNotification {
   CONFLIT_PLANNING
   COMPTE_VALIDE
   COMPTE_REFUSE
+  COMPTE_CREE
+  MOT_DE_PASSE_REINITIALISE
+  SERVICE_STATUT_MODIFIE
   AFFECTATION
   AUTORISATIONS_MODIFIEES
+  /// Message diffusé par l'Admin à un ou plusieurs comptes (CDC I.13).
+  ANNONCE
 }
 
 enum TypeToken {

@@ -8,6 +8,8 @@ import { AppointmentsService } from '../appointments/appointments.service';
 import {
   AnnonceDto,
   CreateCompteDto,
+  CreateDomaineDto,
+  UpdateDomaineDto,
   StatutCompteAdmin,
   UpdateClientDto,
   UpdateParamsDto,
@@ -33,10 +35,20 @@ export class AdminService {
   // ==========================================================================
   // COMPTES PROFESSIONNELS
   // ==========================================================================
-  async listProfessionnels(filters: { statut?: string; search?: string } = {}) {
+  async listProfessionnels(filters: { statut?: string; search?: string; domaineId?: string } = {}) {
+    // `domaineId=AUCUN` isole les professionnels qui ne sont rattachés à rien :
+    // c'est la liste de travail de l'Admin quand il classe les inscriptions.
+    const domaineFilter =
+      filters.domaineId === 'AUCUN'
+        ? { professionnel: { domaineId: null } }
+        : filters.domaineId
+          ? { professionnel: { domaineId: filters.domaineId } }
+          : {};
+
     const where: Prisma.UserWhereInput = {
       role: 'PROFESSIONNEL',
       statutCompte: filters.statut ? (filters.statut as any) : undefined,
+      ...domaineFilter,
       ...(filters.search
         ? {
             OR: [
@@ -53,6 +65,7 @@ export class AdminService {
       include: {
         professionnel: {
           include: {
+            domaine: { select: { id: true, nom: true } },
             _count: { select: { services: true, rendezVous: true, affectations: true } },
           },
         },
@@ -74,6 +87,7 @@ export class AdminService {
       include: {
         user: true,
         parametres: true,
+        domaine: { select: { id: true, nom: true } },
         services: { orderBy: { createdAt: 'desc' } },
         disponibilites: { orderBy: [{ jourSemaine: 'asc' }, { heureDebut: 'asc' }] },
         indisponibilites: { where: { dateFin: { gte: new Date() } }, orderBy: { dateDebut: 'asc' } },
@@ -112,6 +126,8 @@ export class AdminService {
       description: pro.description,
       adresse: pro.adresse,
       photoUrl: pro.photoUrl,
+      domaineId: pro.domaineId ?? null,
+      domaine: pro.domaine?.nom ?? null,
       statutCompte: pro.user.statutCompte,
       emailVerifie: pro.user.emailVerifie,
       createdAt: pro.user.createdAt,
@@ -290,13 +306,14 @@ export class AdminService {
   async createCompte(dto: CreateCompteDto, adminUserId: string) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Un compte existe déjà avec cette adresse e-mail.');
+    if (dto.role === 'PROFESSIONNEL' && dto.domaineId) await this.assertDomaineExiste(dto.domaineId);
 
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
     // Un compte ADMIN n'a pas de fiche métier : le nom saisi n'est conservé que
     // dans l'audit, l'identité d'un administrateur étant son adresse e-mail.
     const profil =
       dto.role === 'PROFESSIONNEL'
-        ? { professionnel: { create: { nom: dto.nom, telephone: dto.telephone, specialite: dto.specialite } } }
+        ? { professionnel: { create: { nom: dto.nom, telephone: dto.telephone, specialite: dto.specialite, domaineId: dto.domaineId ?? null } } }
         : dto.role === 'RECEPTIONNISTE'
           ? { receptionniste: { create: { nom: dto.nom, telephone: dto.telephone } } }
           : {};
@@ -315,7 +332,7 @@ export class AdminService {
 
     await this.notifications.create(
       user.id,
-      'COMPTE_VALIDE',
+      'COMPTE_CREE',
       "Votre compte a été créé et activé par l'administrateur de la plateforme.",
       adminUserId,
     );
@@ -342,7 +359,7 @@ export class AdminService {
       data: { usedAt: new Date() },
     });
 
-    await this.notifications.create(userId, 'MODIFICATION', "Votre mot de passe a été réinitialisé par l'administrateur.", adminUserId);
+    await this.notifications.create(userId, 'MOT_DE_PASSE_REINITIALISE', "Votre mot de passe a été réinitialisé par l'administrateur.", adminUserId);
     await this.audit.log({ userId: adminUserId, action: 'ACCOUNT_PASSWORD_RESET', cible: userId });
     return { message: 'Mot de passe réinitialisé.' };
   }
@@ -539,6 +556,95 @@ export class AdminService {
   }
 
   // ==========================================================================
+  // DOMAINES D'ACTIVITÉ
+  // ==========================================================================
+  async listDomaines() {
+    const domaines = await this.prisma.domaine.findMany({
+      include: { _count: { select: { professionnels: true } } },
+      orderBy: [{ ordre: 'asc' }, { nom: 'asc' }],
+    });
+    return domaines.map((d) => ({
+      id: d.id,
+      nom: d.nom,
+      description: d.description,
+      actif: d.actif,
+      ordre: d.ordre,
+      createdAt: d.createdAt,
+      nbProfessionnels: d._count.professionnels,
+    }));
+  }
+
+  async createDomaine(dto: CreateDomaineDto, adminUserId: string) {
+    const nom = dto.nom.trim();
+    const existant = await this.prisma.domaine.findUnique({ where: { nom } });
+    if (existant) throw new ConflictException('Un domaine porte déjà ce nom.');
+
+    const domaine = await this.prisma.domaine.create({
+      data: { nom, description: dto.description, actif: dto.actif ?? true, ordre: dto.ordre ?? 0 },
+    });
+    await this.audit.log({ userId: adminUserId, action: 'DOMAINE_CREATED', cible: domaine.id, details: { nom } });
+    return domaine;
+  }
+
+  async updateDomaine(id: string, dto: UpdateDomaineDto, adminUserId: string) {
+    const domaine = await this.prisma.domaine.findUnique({ where: { id } });
+    if (!domaine) throw new NotFoundException('Domaine introuvable.');
+
+    if (dto.nom && dto.nom.trim() !== domaine.nom) {
+      const conflit = await this.prisma.domaine.findUnique({ where: { nom: dto.nom.trim() } });
+      if (conflit) throw new ConflictException('Un domaine porte déjà ce nom.');
+    }
+
+    const updated = await this.prisma.domaine.update({ where: { id }, data: { ...dto, nom: dto.nom?.trim() } });
+    await this.audit.log({ userId: adminUserId, action: 'DOMAINE_UPDATED', cible: id, details: dto as any });
+    return updated;
+  }
+
+  /**
+   * Suppression refusée tant qu'au moins un professionnel est rattaché :
+   * on masque le domaine (`actif: false`) plutôt que de déclasser des fiches.
+   */
+  async deleteDomaine(id: string, adminUserId: string) {
+    const domaine = await this.prisma.domaine.findUnique({
+      where: { id },
+      include: { _count: { select: { professionnels: true } } },
+    });
+    if (!domaine) throw new NotFoundException('Domaine introuvable.');
+    if (domaine._count.professionnels > 0) {
+      throw new BadRequestException(
+        `${domaine._count.professionnels} professionnel(s) sont rattachés à ce domaine : masquez-le au lieu de le supprimer.`,
+      );
+    }
+
+    await this.prisma.domaine.delete({ where: { id } });
+    await this.audit.log({ userId: adminUserId, action: 'DOMAINE_DELETED', cible: id, details: { nom: domaine.nom } });
+    return { message: 'Domaine supprimé.' };
+  }
+
+  /** Rattache (ou détache, avec `null`) un professionnel à un domaine. */
+  async setProfessionnelDomaine(professionnelId: string, domaineId: string | null | undefined, adminUserId: string) {
+    const pro = await this.prisma.professionnel.findUnique({ where: { id: professionnelId } });
+    if (!pro) throw new NotFoundException('Professionnel introuvable.');
+
+    const cible = domaineId ?? null;
+    if (cible) await this.assertDomaineExiste(cible);
+
+    const updated = await this.prisma.professionnel.update({
+      where: { id: professionnelId },
+      data: { domaineId: cible },
+      include: { domaine: { select: { id: true, nom: true } } },
+    });
+    await this.audit.log({
+      userId: adminUserId,
+      action: 'PRO_DOMAINE_CHANGED',
+      cible: professionnelId,
+      details: { ancien: pro.domaineId, nouveau: cible },
+      professionnelId,
+    });
+    return { id: updated.id, domaineId: updated.domaineId, domaine: updated.domaine?.nom ?? null };
+  }
+
+  // ==========================================================================
   // ANNONCES — message diffusé par l'Admin aux comptes de la plateforme
   // ==========================================================================
   async envoyerAnnonce(dto: AnnonceDto, adminUserId: string) {
@@ -558,10 +664,8 @@ export class AdminService {
     if (!destinataires.length) throw new BadRequestException('Aucun destinataire ne correspond à cette cible.');
 
     const message = dto.message.trim();
-    // `TypeNotification` n'a pas de valeur dédiée aux annonces : on réutilise
-    // MODIFICATION, `senderId` identifiant déjà l'administrateur émetteur.
     await this.prisma.notification.createMany({
-      data: destinataires.map((u) => ({ recipientId: u.id, senderId: adminUserId, type: 'MODIFICATION' as const, message })),
+      data: destinataires.map((u) => ({ recipientId: u.id, senderId: adminUserId, type: 'ANNONCE' as const, message })),
     });
     await this.audit.log({
       userId: adminUserId,
@@ -1048,6 +1152,17 @@ export class AdminService {
       this.prisma.rendezVous.count({ where: { dateDebut: { gte: now }, statut: { in: STATUTS_ACTIFS as any } } }),
     ]);
 
+    const [nbDomaines, domainesActifs, prosSansDomaine] = await this.prisma.$transaction([
+      this.prisma.domaine.count(),
+      this.prisma.domaine.count({ where: { actif: true } }),
+      this.prisma.professionnel.count({ where: { domaineId: null } }),
+    ]);
+
+    const repartitionDomaines = await this.prisma.domaine.findMany({
+      select: { id: true, nom: true, actif: true, _count: { select: { professionnels: true } } },
+      orderBy: [{ ordre: 'asc' }, { nom: 'asc' }],
+    });
+
     const absencesEnCours = await this.prisma.indisponibilite.count({ where: { dateFin: { gte: now } } });
 
     const [parStatut, topServicesRaw, topProsRaw] = await Promise.all([
@@ -1087,6 +1202,11 @@ export class AdminService {
       nbClients, nbServices, servicesActifs,
       // Absences en cours ou à venir
       absencesEnCours,
+      // Domaines d'activité
+      nbDomaines, domainesActifs, prosSansDomaine,
+      repartitionDomaines: repartitionDomaines.map((d) => ({
+        id: d.id, nom: d.nom, actif: d.actif, nbProfessionnels: d._count.professionnels,
+      })),
       // Rendez-vous
       nbRdv, rdvTermines, rdvAnnules, rdvAujourdhui, rdvSemaine, rdvAVenir,
       tauxAnnulation: nbRdv ? Math.round((rdvAnnules / nbRdv) * 1000) / 10 : 0,
@@ -1153,11 +1273,12 @@ export class AdminService {
   async exportCsv(entity: string, filters: Record<string, string> = {}): Promise<{ filename: string; csv: string }> {
     switch (entity) {
       case 'professionnels': {
-        const rows = await this.listProfessionnels({ statut: filters.statut, search: filters.search });
+        const rows = await this.listProfessionnels({ statut: filters.statut, search: filters.search, domaineId: filters.domaineId });
         return {
           filename: 'professionnels.csv',
           csv: this.toCsv(rows, [
             ['nom', 'Nom'], ['email', 'E-mail'], ['telephone', 'Téléphone'], ['specialite', 'Spécialité'],
+            ['domaine', "Domaine d'activité"],
             ['statutCompte', 'Statut'], ['nbServices', 'Services'], ['nbRdv', 'Rendez-vous'],
             ['nbClients', 'Clients'], ['createdAt', 'Créé le'], ['lastLoginAt', 'Dernière connexion'],
           ]),
@@ -1241,6 +1362,16 @@ export class AdminService {
           ]),
         };
       }
+      case 'domaines': {
+        const rows = await this.listDomaines();
+        return {
+          filename: 'domaines.csv',
+          csv: this.toCsv(rows, [
+            ['nom', 'Domaine'], ['description', 'Description'], ['actif', 'Visible'],
+            ['ordre', 'Ordre'], ['nbProfessionnels', 'Professionnels'], ['createdAt', 'Créé le'],
+          ]),
+        };
+      }
       case 'indisponibilites': {
         const rows = await this.listIndisponibilites({
           professionnelId: filters.professionnelId, from: filters.from, to: filters.to, type: filters.type,
@@ -1274,6 +1405,8 @@ export class AdminService {
       telephone: pro.telephone,
       specialite: pro.specialite,
       photoUrl: pro.photoUrl,
+      domaineId: pro.domaineId ?? null,
+      domaine: pro.domaine?.nom ?? null,
       statutCompte: user.statutCompte,
       emailVerifie: user.emailVerifie,
       createdAt: user.createdAt,
@@ -1313,6 +1446,12 @@ export class AdminService {
     };
   }
 
+
+  private async assertDomaineExiste(domaineId: string) {
+    const domaine = await this.prisma.domaine.findUnique({ where: { id: domaineId } });
+    if (!domaine) throw new NotFoundException('Domaine introuvable.');
+    return domaine;
+  }
 
   private async nbClientsParProfessionnel() {
     const pairs = await this.prisma.rendezVous.findMany({

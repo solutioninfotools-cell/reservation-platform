@@ -12,12 +12,15 @@ import {
   AnnulerRdvDto,
   BulkStatutCompteDto,
   CreateCompteDto,
+  CreateDomaineDto,
   DeplacerRdvDto,
   ResetPasswordDto,
   SetAffectationsDto,
+  SetDomaineDto,
   SetServiceActifDto,
   SetServiceStatutDto,
   UpdateClientDto,
+  UpdateDomaineDto,
   UpdateEmailDto,
   UpdateParamsDto,
   UpdatePermissionsAffectationDto,
@@ -41,9 +44,9 @@ export class AdminController {
 
   // ---------------- Professionnels ----------------
   @Get('professionnels')
-  @ApiOperation({ summary: 'Liste des professionnels (filtres statut / recherche)' })
-  listPros(@Query('statut') statut?: string, @Query('search') search?: string) {
-    return this.admin.listProfessionnels({ statut, search });
+  @ApiOperation({ summary: 'Liste des professionnels (filtres statut / domaine / recherche)' })
+  listPros(@Query('statut') statut?: string, @Query('search') search?: string, @Query('domaineId') domaineId?: string) {
+    return this.admin.listProfessionnels({ statut, search, domaineId });
   }
 
   @Get('professionnels/:id')
@@ -56,6 +59,12 @@ export class AdminController {
   @ApiOperation({ summary: "Corriger la fiche d'un professionnel (nom, spécialité, coordonnées)" })
   updatePro(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateProfessionnelDto) {
     return this.admin.updateProfessionnel(id, dto, user.userId);
+  }
+
+  @Patch('professionnels/:id/domaine')
+  @ApiOperation({ summary: "Rattacher un professionnel à un domaine d'activité (null = détacher)" })
+  setProDomaine(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: SetDomaineDto) {
+    return this.admin.setProfessionnelDomaine(id, dto.domaineId ?? null, user.userId);
   }
 
   // ---------------- Réceptionnistes ----------------
@@ -138,6 +147,29 @@ export class AdminController {
   @Patch('affectations/:id/permissions')
   updatePermissions(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdatePermissionsAffectationDto) {
     return this.admin.updatePermissionsAffectation(id, dto, user.userId);
+  }
+
+  // ---------------- Domaines d'activité ----------------
+  @Get('domaines')
+  @ApiOperation({ summary: "Domaines d'activité avec le nombre de professionnels rattachés" })
+  listDomaines() {
+    return this.admin.listDomaines();
+  }
+
+  @Post('domaines')
+  createDomaine(@CurrentUser() user: any, @Body() dto: CreateDomaineDto) {
+    return this.admin.createDomaine(dto, user.userId);
+  }
+
+  @Patch('domaines/:id')
+  updateDomaine(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateDomaineDto) {
+    return this.admin.updateDomaine(id, dto, user.userId);
+  }
+
+  @Delete('domaines/:id')
+  @ApiOperation({ summary: 'Supprimer un domaine (refusé si des professionnels y sont rattachés)' })
+  deleteDomaine(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.admin.deleteDomaine(id, user.userId);
   }
 
   // ---------------- Annonces ----------------

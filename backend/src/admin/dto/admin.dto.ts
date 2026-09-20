@@ -33,6 +33,7 @@ export class CreateCompteDto {
   @ApiProperty() @IsString() nom: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() telephone?: string;
   @ApiProperty({ required: false, description: 'Professionnel uniquement' }) @IsOptional() @IsString() specialite?: string;
+  @ApiProperty({ required: false, description: 'Professionnel uniquement' }) @IsOptional() @IsString() domaineId?: string;
 }
 
 export class ResetPasswordDto {
@@ -164,4 +165,28 @@ export class UpdateClientDto {
   @ApiProperty({ required: false }) @IsOptional() @IsEmail() email?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() adresse?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() dateNaissance?: string;
+}
+
+// ===========================================================================
+// Domaines d'activité
+// ===========================================================================
+export class CreateDomaineDto {
+  @ApiProperty() @IsString() @MinLength(2) nom: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsBoolean() actif?: boolean;
+  @ApiProperty({ required: false }) @IsOptional() @IsInt() @Min(0) ordre?: number;
+}
+
+export class UpdateDomaineDto {
+  @ApiProperty({ required: false }) @IsOptional() @IsString() @MinLength(2) nom?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsBoolean() actif?: boolean;
+  @ApiProperty({ required: false }) @IsOptional() @IsInt() @Min(0) ordre?: number;
+}
+
+/** `null` détache le professionnel de tout domaine. */
+export class SetDomaineDto {
+  @ApiProperty({ required: false, nullable: true })
+  @IsOptional() @ValidateIf((_o, v) => v !== null) @IsString()
+  domaineId?: string | null;
 }
