@@ -1,116 +1,110 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
+/**
+ * Amorçage de la plateforme — équivalent en ligne de commande de l'assistant
+ * de configuration initiale (`/configuration`).
+ *
+ * Crée UNIQUEMENT ce sans quoi personne ne peut se connecter : la configuration
+ * de l'espace et le compte Admin. Aucun client, rendez-vous, service ni
+ * réceptionniste n'est inventé — ces données naissent de l'usage réel de
+ * l'application.
+ *
+ * ⚠ Les identifiants par défaut ci-dessous sont publics (ils sont dans le dépôt).
+ * Ils conviennent au développement local ; en déploiement réel, fournissez
+ * SEED_ADMIN_EMAIL et SEED_ADMIN_PASSWORD, ou changez le mot de passe depuis
+ * l'espace Admin juste après la première connexion.
+ */
+const ADMIN_PAR_DEFAUT = {
+  email: 'admin@rendezvousapp.com',
+  password: 'Admin123!',
+  nom: 'Administrateur',
+};
+
 const prisma = new PrismaClient();
 
+const SALT_ROUNDS = 12;
+
+const EMAIL = process.env.SEED_ADMIN_EMAIL ?? ADMIN_PAR_DEFAUT.email;
+const PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? ADMIN_PAR_DEFAUT.password;
+const NOM = process.env.SEED_ADMIN_NOM ?? ADMIN_PAR_DEFAUT.nom;
+const MODE = (process.env.SEED_MODE ?? 'ADMIN') as 'ADMIN' | 'PRESTATAIRE';
+const DOMAINE = process.env.SEED_DOMAINE ?? 'Général';
+const PLATFORM_NAME = process.env.SEED_PLATFORM_NAME ?? 'RendezVousApp';
+// Réexécuter le seed remet le mot de passe par défaut sur un compte existant.
+const RESET_PASSWORD = process.env.SEED_RESET_PASSWORD === 'true';
+
 async function main() {
-  console.log('Seed — création des données de démonstration...');
-
-  const passwordHash = await bcrypt.hash('Password123!', 12);
-
-  // Configuration initiale (mode Admin, domaine Médical)
-  const config = await prisma.systemConfig.upsert({
-    where: { id: 'singleton' },
-    update: {},
-    create: {
-      id: 'singleton',
-      isConfigured: true,
-      modeSupervision: 'ADMIN',
-      domaine: 'Médical',
-      platformName: 'RendezVousApp',
-      slogan: 'Votre rendez-vous, simplifié.',
-      description: 'Cabinet médical — prise de rendez-vous en ligne.',
-      address: '12 rue des Frères Bouadou, Sétif',
-      phone: '0555 10 20 30',
-      email: 'contact@rendezvousapp.com',
-      joursOuvrables: ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'],
-      horairesGeneraux: '09:00 – 18:00',
-    },
-  });
-
-  // Domaines d'activité de départ (gérés ensuite depuis l'espace Admin).
-  const domaines = await Promise.all(
-    [
-      { nom: 'Santé', description: 'Médecine générale, spécialistes, paramédical', ordre: 0 },
-      { nom: 'Beauté et bien-être', description: 'Coiffure, esthétique, massage', ordre: 1 },
-      { nom: 'Conseil', description: 'Juridique, comptable, orientation', ordre: 2 },
-    ].map((d) => prisma.domaine.upsert({ where: { nom: d.nom }, update: {}, create: d })),
-  );
-  const domaineSante = domaines[0];
-
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@rendezvousapp.com' },
-    update: {},
-    create: { email: 'admin@rendezvousapp.com', passwordHash, role: 'ADMIN', statutCompte: 'ACTIF', emailVerifie: true },
-  });
-
-  const proUser = await prisma.user.upsert({
-    where: { email: 'ahmed.benali@rendezvousapp.com' },
-    update: {},
-    create: {
-      email: 'ahmed.benali@rendezvousapp.com', passwordHash, role: 'PROFESSIONNEL', statutCompte: 'ACTIF', emailVerifie: true,
-      professionnel: {
-        create: {
-          nom: 'Dr. Ahmed Benali', specialite: 'Médecin généraliste',
-          adresse: config.address, telephone: '0555 10 20 30', domaineId: domaineSante.id,
-        },
-      },
-    },
-    include: { professionnel: true },
-  });
-  const pro = proUser.professionnel!;
-
-  const recUser = await prisma.user.upsert({
-    where: { email: 'imane.b@rendezvousapp.com' },
-    update: {},
-    create: {
-      email: 'imane.b@rendezvousapp.com', passwordHash, role: 'RECEPTIONNISTE', statutCompte: 'ACTIF', emailVerifie: true,
-      receptionniste: { create: { nom: 'Imane B.', telephone: '0555 90 10 20' } },
-    },
-    include: { receptionniste: true },
-  });
-  const rec = recUser.receptionniste!;
-
-  await prisma.affectation.upsert({
-    where: { professionnelId_receptionnisteId: { professionnelId: pro.id, receptionnisteId: rec.id } },
-    update: {},
-    create: { professionnelId: pro.id, receptionnisteId: rec.id, peutConsulterAgenda: true, peutGererRdv: true, peutGererPlanning: true, peutGererParametres: false },
-  });
-
-  const service = await prisma.service.create({
-    data: { professionnelId: pro.id, nom: 'Consultation générale', description: 'Consultation médicale standard', dureeMinutes: 30, prix: 3000 },
-  });
-  await prisma.service.create({
-    data: { professionnelId: pro.id, nom: 'Certificat médical', dureeMinutes: 15, prix: 1500 },
-  });
-
-  // Disponibilités : Lundi-Vendredi 9h-17h
-  for (let jour = 0; jour <= 4; jour++) {
-    await prisma.disponibilite.create({ data: { professionnelId: pro.id, jourSemaine: jour, heureDebut: '09:00', heureFin: '17:00' } });
+  if (MODE !== 'ADMIN' && MODE !== 'PRESTATAIRE') {
+    throw new Error(`SEED_MODE invalide : « ${MODE} ». Valeurs acceptées : ADMIN, PRESTATAIRE.`);
   }
 
-  const client = await prisma.client.upsert({
-    where: { telephone: '0555123466' },
-    update: {},
-    create: { nom: 'Hadj', prenom: 'Yasmine', telephone: '0555123466', email: 'yasmine.hadj@mail.com' },
+  const role = MODE === 'ADMIN' ? 'ADMIN' : 'PROFESSIONNEL';
+  const passwordHash = await bcrypt.hash(PASSWORD, SALT_ROUNDS);
+  const existant = await prisma.user.findUnique({ where: { email: EMAIL } });
+
+  if (existant && !RESET_PASSWORD) {
+    // On ne réécrit pas un mot de passe en silence : le compte est peut-être
+    // déjà utilisé. `SEED_RESET_PASSWORD=true` force la réinitialisation.
+    console.log(`\nLe compte ${EMAIL} existe déjà (rôle ${existant.role}) — aucune modification.`);
+    console.log('Pour réinitialiser son mot de passe : SEED_RESET_PASSWORD=true npm run prisma:seed\n');
+    return;
+  }
+
+  const config = await prisma.systemConfig.findFirst();
+
+  await prisma.$transaction(async (tx) => {
+    if (config) {
+      await tx.systemConfig.update({
+        where: { id: config.id },
+        data: { isConfigured: true, modeSupervision: MODE, domaine: DOMAINE, platformName: PLATFORM_NAME },
+      });
+    } else {
+      await tx.systemConfig.create({
+        data: { isConfigured: true, modeSupervision: MODE, domaine: DOMAINE, platformName: PLATFORM_NAME },
+      });
+    }
+
+    if (existant) {
+      // Le compte est réactivé au passage : un seed qui rend la main sur un
+      // compte désactivé ne servirait à rien.
+      await tx.user.update({
+        where: { id: existant.id },
+        data: { passwordHash, statutCompte: 'ACTIF', emailVerifie: true },
+      });
+      return;
+    }
+
+    // Le premier compte est actif d'emblée : aucune autorité au-dessus de lui
+    // ne pourrait le valider (même règle que l'assistant de configuration).
+    await tx.user.create({
+      data: {
+        email: EMAIL,
+        passwordHash,
+        role,
+        statutCompte: 'ACTIF',
+        emailVerifie: true,
+        ...(role === 'PROFESSIONNEL' ? { professionnel: { create: { nom: NOM } } } : {}),
+      },
+    });
   });
 
-  const demain = new Date(); demain.setDate(demain.getDate() + 1); demain.setHours(9, 0, 0, 0);
-  await prisma.rendezVous.create({
-    data: {
-      professionnelId: pro.id, serviceId: service.id, clientId: client.id,
-      dateDebut: demain, dateFin: new Date(demain.getTime() + 30 * 60000),
-      statut: 'RESERVE', origine: 'EN_LIGNE', manageToken: 'demo-token-000001',
-    },
-  });
-
-  console.log('Seed terminé.');
-  console.log('Comptes de démonstration (mot de passe: Password123!) :');
-  console.log(' - Admin           :', admin.email);
-  console.log(' - Professionnel   :', proUser.email);
-  console.log(' - Réceptionniste  :', recUser.email);
+  console.log(`\nPlateforme amorcée — compte ${existant ? 'réinitialisé' : 'créé'}.`);
+  console.log(`  Espace       : ${PLATFORM_NAME} (domaine « ${DOMAINE} », supervision ${MODE})`);
+  console.log(`  Connexion    : ${EMAIL}`);
+  console.log(`  Mot de passe : ${PASSWORD}`);
+  console.log(`  Destination  : ${role === 'ADMIN' ? '/admin' : '/professionnel'}\n`);
+  if (PASSWORD === ADMIN_PAR_DEFAUT.password) {
+    console.log('Mot de passe par défaut (connu publiquement) — changez-le avant toute mise en ligne.');
+  }
+  console.log('Créez ensuite vos professionnels, services et disponibilités depuis l\'application.\n');
 }
 
 main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(async () => { await prisma.$disconnect(); });
+  .catch((e) => {
+    console.error(e instanceof Error ? e.message : e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

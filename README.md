@@ -46,9 +46,25 @@ npm run dev                     # http://localhost:5173
 La base ne contient aucune donnée de démonstration : tout est créé depuis
 l'application.
 
-1. Ouvrez `http://localhost:5173/configuration` et suivez l'assistant de
-   configuration initiale (mode de supervision, domaine d'activité, premier
-   compte superviseur).
+1. Créez le premier compte superviseur, au choix :
+   - **Depuis l'application** — ouvrez `http://localhost:5173/configuration` et
+     suivez l'assistant (mode de supervision, domaine d'activité, compte).
+   - **En ligne de commande** — `npm run prisma:seed` dans `backend/`. Le script
+     n'amorce que la configuration de l'espace et ce compte ; il n'invente aucun
+     client, rendez-vous ni service :
+
+     ```bash
+     cd backend
+     SEED_ADMIN_EMAIL=admin@monsite.com \
+     SEED_ADMIN_PASSWORD='VotreMotDePasse123!' \
+     SEED_DOMAINE=Médical \
+     npm run prisma:seed
+     ```
+
+     Sans `SEED_ADMIN_PASSWORD`, un mot de passe aléatoire est généré et affiché
+     en fin d'exécution. Autres variables : `SEED_ADMIN_NOM`, `SEED_MODE`
+     (`ADMIN` ou `PRESTATAIRE`), `SEED_PLATFORM_NAME`. Le script ne touche jamais
+     à un compte déjà existant.
 2. Connectez-vous avec ce compte sur `http://localhost:5173/connexion`.
 3. Créez vos professionnels et réceptionnistes depuis l'espace Admin, puis vos
    services et disponibilités depuis l'espace Professionnel — la page publique

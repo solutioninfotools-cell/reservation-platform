@@ -168,7 +168,7 @@ export default function ReceptionnisteDashboard() {
     showToast._t = setTimeout(() => t.classList.remove("show"), 2600);
   }
   window.showError = function showError(err) {
-    const msg = err?.response?.data?.message || err?.message || "Une erreur est survenue.";
+    const msg = (err?.response?.data?.error ?? err?.response?.data?.message) || err?.message || "Une erreur est survenue.";
     showToast(esc(Array.isArray(msg) ? msg.join(", ") : msg));
   }
   // Permission accordée par le professionnel sur son espace (revérifiée côté serveur).
@@ -1116,7 +1116,7 @@ export default function ReceptionnisteDashboard() {
       await refreshAll(true);
     } catch (e) {
       btn.disabled = false;
-      const msg = e?.response?.data?.message || "La création du rendez-vous a échoué.";
+      const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "La création du rendez-vous a échoué.";
       err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
       err.classList.add("show");
       // Un conflit signifie que le créneau vient d'être pris : on recharge la liste réelle.
@@ -1224,7 +1224,7 @@ export default function ReceptionnisteDashboard() {
       showToast("Rendez-vous déplacé");
       await refreshAll(true);
     } catch (e) {
-      const msg = e?.response?.data?.message || "Le déplacement a échoué.";
+      const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "Le déplacement a échoué.";
       err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
       err.classList.add("show");
       loadNewRdvSlots();

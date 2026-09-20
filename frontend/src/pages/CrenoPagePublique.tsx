@@ -540,7 +540,7 @@ export default function CrenoPagePublique() {
         renderBookingStep();
       } catch (e) {
         booking.submitting = false;
-        const msg = e?.response?.data?.message || "La réservation n'a pas pu être enregistrée.";
+        const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "La réservation n'a pas pu être enregistrée.";
         booking.error = Array.isArray(msg) ? msg.join(", ") : msg;
         // Conflit : le créneau vient d'être pris, on revient au calendrier rafraîchi.
         if (e?.response?.status === 409) {
@@ -618,7 +618,7 @@ export default function CrenoPagePublique() {
         renderLookupResult(rdv);
       } catch (e) {
         const errEl = document.getElementById("lookupError");
-        const msg = e?.response?.data?.message || "L'annulation n'a pas pu être effectuée.";
+        const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "L'annulation n'a pas pu être effectuée.";
         errEl.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
         errEl.classList.add("show");
       }

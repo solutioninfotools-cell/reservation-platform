@@ -182,7 +182,7 @@ export default function ProfessionnelDashboard() {
     showToast._t = setTimeout(() => t.classList.remove("show"), 2600);
   }
   window.showError = function showError(err) {
-    const msg = err?.response?.data?.message || err?.message || "Une erreur est survenue.";
+    const msg = (err?.response?.data?.error ?? err?.response?.data?.message) || err?.message || "Une erreur est survenue.";
     showToast(esc(Array.isArray(msg) ? msg.join(", ") : msg));
   }
 
@@ -1200,7 +1200,7 @@ export default function ProfessionnelDashboard() {
       showToast(`Plage ajoutée — ${JOURS[jourIndex]} ${heureDebut} – ${heureFin}`);
       await refreshAll(true);
     } catch (e) {
-      const msg = e?.response?.data?.message || "L'ajout a échoué.";
+      const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "L'ajout a échoué.";
       err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
       err.classList.add("show");
     }
@@ -1247,7 +1247,7 @@ export default function ProfessionnelDashboard() {
       showToast(`Période fermée${res.rendezVousAnnules ? ` — ${res.rendezVousAnnules} rendez-vous annulé(s)` : ""}`);
       await refreshAll(true);
     } catch (e) {
-      const msg = e?.response?.data?.message || "La fermeture a échoué.";
+      const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "La fermeture a échoué.";
       err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
       err.classList.add("show");
     }
@@ -1300,7 +1300,7 @@ export default function ProfessionnelDashboard() {
       PARAMS = await professionnelApi.updateParametres(data);
       showToast("Règles de réservation enregistrées");
     } catch (e) {
-      const msg = e?.response?.data?.message || "L'enregistrement a échoué.";
+      const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "L'enregistrement a échoué.";
       err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
       err.classList.add("show");
     }
@@ -1549,7 +1549,7 @@ export default function ProfessionnelDashboard() {
       showToast("Profil mis à jour");
       await refreshAll(true);
     } catch (e) {
-      const msg = e?.response?.data?.message || "L'enregistrement a échoué.";
+      const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "L'enregistrement a échoué.";
       err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
       err.classList.add("show");
     }
@@ -1659,7 +1659,7 @@ export default function ProfessionnelDashboard() {
       await refreshAll(true);
     } catch (e) {
       btn.disabled = false;
-      const msg = e?.response?.data?.message || "La création du rendez-vous a échoué.";
+      const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "La création du rendez-vous a échoué.";
       err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
       err.classList.add("show");
       if (e?.response?.status === 409) loadNewRdvSlots();
@@ -1745,7 +1745,7 @@ export default function ProfessionnelDashboard() {
       showToast("Rendez-vous déplacé");
       await refreshAll(true);
     } catch (e) {
-      const msg = e?.response?.data?.message || "Le déplacement a échoué.";
+      const msg = (e?.response?.data?.error ?? e?.response?.data?.message) || "Le déplacement a échoué.";
       err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
       err.classList.add("show");
       loadNewRdvSlots();

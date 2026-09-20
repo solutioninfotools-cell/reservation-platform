@@ -125,7 +125,7 @@ export default function AdminDashboard() {
   window.val = function val(id) { return (document.getElementById(id)?.value || "").trim(); }
   window.showToast = function showToast(msg) { const t = document.getElementById("toast"); if (!t) return; t.innerHTML = msg; t.classList.add("show"); clearTimeout(showToast._t); showToast._t = setTimeout(() => t.classList.remove("show"), 2800); }
   window.showError = function showError(err) {
-    const msg = err?.response?.data?.message || err?.message || "Une erreur est survenue.";
+    const msg = (err?.response?.data?.error ?? err?.response?.data?.message) || err?.message || "Une erreur est survenue.";
     showToast(esc(Array.isArray(msg) ? msg.join(", ") : msg));
   }
   const debounce = (fn, ms = 320) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
