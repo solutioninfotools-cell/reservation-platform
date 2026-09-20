@@ -434,8 +434,7 @@ enum TypeNotification {
   AFFECTATION
   AUTORISATIONS_MODIFIEES
   /// Message diffusé par l'Admin à un ou plusieurs comptes (CDC I.13).
-  ANNONCE
-}
+  ANNONCE}
 
 enum TypeToken {
   VERIFICATION_EMAIL

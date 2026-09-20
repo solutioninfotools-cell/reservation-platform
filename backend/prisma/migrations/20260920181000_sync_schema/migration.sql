@@ -4,66 +4,82 @@
 -- Ce fichier réaligne la base sur `schema.prisma` ; généré via
 -- `prisma migrate diff`, donc rejouable sur une base neuve (Supabase) comme sur
 -- une base déjà à jour d'`init` + `admin_domaines`.
+--
+-- Version sécurisée : chaque instruction est protégée pour ne pas échouer si
+-- l'élément visé (type, colonne, contrainte, index, table...) existe déjà,
+-- car plusieurs migrations créées indépendamment par l'équipe se recoupent
+-- sur cette base partagée.
 
 -- CreateEnum
-CREATE TYPE "StatutService" AS ENUM ('DISPONIBLE', 'COMPLET', 'INDISPONIBLE');
+DO $$ BEGIN
+    CREATE TYPE "StatutService" AS ENUM ('DISPONIBLE', 'COMPLET', 'INDISPONIBLE');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- AlterEnum
--- This migration adds more than one value to an enum.
--- With PostgreSQL versions 11 and earlier, this is not possible
--- in a single migration. This can be worked around by creating
--- multiple migrations, each migration adding only one value to
--- the enum.
-
-
-ALTER TYPE "TypeChamp" ADD VALUE 'TEXTE_LONG';
-ALTER TYPE "TypeChamp" ADD VALUE 'SWITCH';
-ALTER TYPE "TypeChamp" ADD VALUE 'FICHIER';
+ALTER TYPE "TypeChamp" ADD VALUE IF NOT EXISTS 'TEXTE_LONG';
+ALTER TYPE "TypeChamp" ADD VALUE IF NOT EXISTS 'SWITCH';
+ALTER TYPE "TypeChamp" ADD VALUE IF NOT EXISTS 'FICHIER';
 
 -- DropForeignKey
-ALTER TABLE "Notification" DROP CONSTRAINT "Notification_userId_fkey";
+ALTER TABLE "Notification" DROP CONSTRAINT IF EXISTS "Notification_userId_fkey";
 
 -- DropIndex
-DROP INDEX "Notification_userId_lu_idx";
+DROP INDEX IF EXISTS "Notification_userId_lu_idx";
 
 -- AlterTable
-ALTER TABLE "Affectation" ADD COLUMN     "actif" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "Affectation" ADD COLUMN IF NOT EXISTS "actif" BOOLEAN NOT NULL DEFAULT true;
 
 -- AlterTable
-ALTER TABLE "AuditLog" ADD COLUMN     "professionnelId" TEXT;
+ALTER TABLE "AuditLog" ADD COLUMN IF NOT EXISTS "professionnelId" TEXT;
 
 -- AlterTable
-ALTER TABLE "ChampPersonnalise" ADD COLUMN     "conditionLogique" TEXT NOT NULL DEFAULT 'ET',
-ADD COLUMN     "conditions" JSONB,
-ADD COLUMN     "requisSiCondition" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN     "texteAide" TEXT,
-ADD COLUMN     "valeurParDefaut" TEXT;
+ALTER TABLE "ChampPersonnalise" ADD COLUMN IF NOT EXISTS "conditionLogique" TEXT NOT NULL DEFAULT 'ET';
+ALTER TABLE "ChampPersonnalise" ADD COLUMN IF NOT EXISTS "conditions" JSONB;
+ALTER TABLE "ChampPersonnalise" ADD COLUMN IF NOT EXISTS "requisSiCondition" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "ChampPersonnalise" ADD COLUMN IF NOT EXISTS "texteAide" TEXT;
+ALTER TABLE "ChampPersonnalise" ADD COLUMN IF NOT EXISTS "valeurParDefaut" TEXT;
 
 -- AlterTable
-ALTER TABLE "Client" ADD COLUMN     "adresse" TEXT;
+ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "adresse" TEXT;
+
+-- AlterTable (Notification : recipientId/senderId)
+DO $$ BEGIN
+    ALTER TABLE "Notification" RENAME COLUMN "userId" TO "recipientId";
+EXCEPTION
+    WHEN undefined_column THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "Notification" ALTER COLUMN "recipientId" SET NOT NULL;
+EXCEPTION
+    WHEN others THEN null;
+END $$;
+
+ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "senderId" TEXT;
 
 -- AlterTable
-ALTER TABLE "Notification" DROP COLUMN "userId",
-ADD COLUMN     "recipientId" TEXT NOT NULL,
-ADD COLUMN     "senderId" TEXT;
+ALTER TABLE "RendezVous" ADD COLUMN IF NOT EXISTS "changeUsed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "RendezVous" ADD COLUMN IF NOT EXISTS "nombreChangements" INTEGER NOT NULL DEFAULT 0;
 
 -- AlterTable
-ALTER TABLE "RendezVous" ADD COLUMN     "changeUsed" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN     "nombreChangements" INTEGER NOT NULL DEFAULT 0;
+DO $$ BEGIN
+    ALTER TABLE "Service" ADD COLUMN "statut" "StatutService" NOT NULL DEFAULT 'DISPONIBLE';
+EXCEPTION
+    WHEN duplicate_column THEN null;
+END $$;
 
 -- AlterTable
-ALTER TABLE "Service" ADD COLUMN     "statut" "StatutService" NOT NULL DEFAULT 'DISPONIBLE';
-
--- AlterTable
-ALTER TABLE "SystemConfig" ADD COLUMN     "conditionsReservation" TEXT,
-ADD COLUMN     "delaiMinAnnulationHeures" INTEGER NOT NULL DEFAULT 0,
-ADD COLUMN     "delaiMinModificationHeures" INTEGER NOT NULL DEFAULT 48,
-ADD COLUMN     "heroImageUrl" TEXT,
-ADD COLUMN     "localisationUrl" TEXT,
-ADD COLUMN     "maxChangementsRdv" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "SystemConfig" ADD COLUMN IF NOT EXISTS "conditionsReservation" TEXT;
+ALTER TABLE "SystemConfig" ADD COLUMN IF NOT EXISTS "delaiMinAnnulationHeures" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "SystemConfig" ADD COLUMN IF NOT EXISTS "delaiMinModificationHeures" INTEGER NOT NULL DEFAULT 48;
+ALTER TABLE "SystemConfig" ADD COLUMN IF NOT EXISTS "heroImageUrl" TEXT;
+ALTER TABLE "SystemConfig" ADD COLUMN IF NOT EXISTS "localisationUrl" TEXT;
+ALTER TABLE "SystemConfig" ADD COLUMN IF NOT EXISTS "maxChangementsRdv" INTEGER NOT NULL DEFAULT 1;
 
 -- CreateTable
-CREATE TABLE "NoteClient" (
+CREATE TABLE IF NOT EXISTS "NoteClient" (
     "id" TEXT NOT NULL,
     "professionnelId" TEXT NOT NULL,
     "clientId" TEXT NOT NULL,
@@ -75,7 +91,7 @@ CREATE TABLE "NoteClient" (
 );
 
 -- CreateTable
-CREATE TABLE "ParametresReservation" (
+CREATE TABLE IF NOT EXISTS "ParametresReservation" (
     "id" TEXT NOT NULL,
     "professionnelId" TEXT NOT NULL,
     "intervalleMinutes" INTEGER NOT NULL DEFAULT 10,
@@ -90,32 +106,51 @@ CREATE TABLE "ParametresReservation" (
 );
 
 -- CreateIndex
-CREATE INDEX "NoteClient_professionnelId_clientId_idx" ON "NoteClient"("professionnelId", "clientId");
+CREATE INDEX IF NOT EXISTS "NoteClient_professionnelId_clientId_idx" ON "NoteClient"("professionnelId", "clientId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ParametresReservation_professionnelId_key" ON "ParametresReservation"("professionnelId");
+CREATE UNIQUE INDEX IF NOT EXISTS "ParametresReservation_professionnelId_key" ON "ParametresReservation"("professionnelId");
 
 -- CreateIndex
-CREATE INDEX "AuditLog_professionnelId_createdAt_idx" ON "AuditLog"("professionnelId", "createdAt");
+CREATE INDEX IF NOT EXISTS "AuditLog_professionnelId_createdAt_idx" ON "AuditLog"("professionnelId", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "Notification_recipientId_lu_idx" ON "Notification"("recipientId", "lu");
+CREATE INDEX IF NOT EXISTS "Notification_recipientId_lu_idx" ON "Notification"("recipientId", "lu");
 
 -- CreateIndex
-CREATE INDEX "Notification_senderId_idx" ON "Notification"("senderId");
+CREATE INDEX IF NOT EXISTS "Notification_senderId_idx" ON "Notification"("senderId");
 
 -- AddForeignKey
-ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("recipientId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("recipientId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "Notification" ADD CONSTRAINT "Notification_senderId_fkey" FOREIGN KEY ("senderId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "Notification" ADD CONSTRAINT "Notification_senderId_fkey" FOREIGN KEY ("senderId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "NoteClient" ADD CONSTRAINT "NoteClient_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "NoteClient" ADD CONSTRAINT "NoteClient_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "NoteClient" ADD CONSTRAINT "NoteClient_professionnelId_fkey" FOREIGN KEY ("professionnelId") REFERENCES "Professionnel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "NoteClient" ADD CONSTRAINT "NoteClient_professionnelId_fkey" FOREIGN KEY ("professionnelId") REFERENCES "Professionnel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "ParametresReservation" ADD CONSTRAINT "ParametresReservation_professionnelId_fkey" FOREIGN KEY ("professionnelId") REFERENCES "Professionnel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
+DO $$ BEGIN
+    ALTER TABLE "ParametresReservation" ADD CONSTRAINT "ParametresReservation_professionnelId_fkey" FOREIGN KEY ("professionnelId") REFERENCES "Professionnel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;

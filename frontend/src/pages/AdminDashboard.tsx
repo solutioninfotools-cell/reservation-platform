@@ -7,7 +7,6 @@ import { adminApi } from '../api/admin.api';
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
-  // Identité affichée dans la barre du haut : celle du compte réellement connecté.
   const account = useAuthStore((s) => s.user);
 
   useEffect(() => {
@@ -17,11 +16,6 @@ export default function AdminDashboard() {
       navigate('/connexion');
     }, { signal: ac.signal });
 
-  /* =========================================================
-     DONNÉES — toutes issues de l'API (aucune donnée simulée).
-     Le backend reste la seule autorité : rôles, filtres et
-     règles métier sont appliqués côté serveur.
-     ========================================================= */
   const STATUT_UI = { EN_ATTENTE: "attente", ACTIF: "actif", REFUSE: "refuse", DESACTIVE: "desactive" };
   const STATUT_API = { attente: "EN_ATTENTE", actif: "ACTIF", refuse: "REFUSE", desactive: "DESACTIVE" };
   const STATUS_COMPTE = {
@@ -38,7 +32,6 @@ export default function AdminDashboard() {
     ABSENT: { label: "Absent", cls: "st-absent" },
     ANNULE: { label: "Annulé", cls: "st-annule" },
   };
-  // Disponibilité d'un service, distincte de sa publication (`actif`).
   const STATUT_SERVICE = {
     DISPONIBLE: { label: "Disponible", cls: "st-termine" },
     COMPLET: { label: "Complet", cls: "st-encours" },
@@ -51,8 +44,8 @@ export default function AdminDashboard() {
   const NOTIFS_ALERTE = ["COMPTE_REFUSE", "ANNULATION", "CONFLIT_PLANNING", "PROFESSIONNEL_ABSENT"];
 
   let STATS = null;
-  let PROS = [];              // liste complète (sélecteurs, affectations)
-  let PROS_VIEW = [];         // liste filtrée affichée dans le tableau
+  let PROS = [];
+  let PROS_VIEW = [];
   let RECEPTIONNISTES = [];
   let RECS_VIEW = [];
   let CLIENTS_VIEW = [];
@@ -66,7 +59,6 @@ export default function AdminDashboard() {
   let AUDIT = { items: [], total: 0, actions: [] };
   let DOMAINES = [];
   let INDISPOS = [];
-  // Sélections des tableaux (actions groupées) : des Set d'userId.
   let SELECTION = { pros: new Set(), recs: new Set() };
 
   let state = {
@@ -81,9 +73,6 @@ export default function AdminDashboard() {
     indispoFilter: { professionnelId: "", type: "", from: "", to: "" },
   };
 
-  /* =========================================================
-     UTILITAIRES
-     ========================================================= */
   window.todayISO = function todayISO() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
   window.isoPlusDays = function isoPlusDays(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
   window.toDay = function toDay(value) { if (!value) return ""; const d = new Date(value); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
@@ -108,13 +97,10 @@ export default function AdminDashboard() {
   }
   window.fmtMois = function fmtMois(value) { return new Date(value).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }); }
   window.fmtPrix = function fmtPrix(centimes) { return centimes === null || centimes === undefined ? "—" : (centimes / 100).toFixed(2); }
-  // Les données saisies par les utilisateurs sont injectées via innerHTML : on échappe systématiquement.
   window.esc = function esc(value) {
     if (value === null || value === undefined) return "";
     return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
-  // Argument transmis à un handler inline : on échappe pour JS puis pour le HTML,
-  // sans quoi un nom contenant une apostrophe (« L'Atelier ») casserait le onclick.
   window.escArg = function escArg(value) {
     const str = value === null || value === undefined ? "" : String(value);
     return esc(str.replace(/\\/g, "\\\\").replace(/'/g, "\\'"));
@@ -131,9 +117,6 @@ export default function AdminDashboard() {
   const debounce = (fn, ms = 320) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
   const suggestPassword = () => `Rdv-${Math.random().toString(36).slice(2, 8)}${Math.floor(Math.random() * 90 + 10)}!`;
 
-  /* =========================================================
-     CHARGEMENT DES DONNÉES
-     ========================================================= */
   const mapPro = (p) => ({
     id: p.id, userId: p.userId, name: p.nom, email: p.email, phone: p.telephone || "—",
     role: p.specialite || "—",
@@ -191,9 +174,6 @@ export default function AdminDashboard() {
     if (ok) showToast("Données actualisées");
   }
 
-  /* =========================================================
-     NAVIGATION
-     ========================================================= */
   window.goToPage = function goToPage(page) {
     state.page = page;
     document.querySelectorAll(".nav-item").forEach((n) => n.classList.toggle("active", n.dataset.page === page));
@@ -231,9 +211,6 @@ export default function AdminDashboard() {
     set("tbNotifDot", n, "flex");
   }
 
-  /* =========================================================
-     ICONES
-     ========================================================= */
   window.svg = function svg(inner, w) { w = w || 15; return `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`; }
   window.iconCheck = function iconCheck() { return svg('<polyline points="20 6 9 17 4 12"/>'); }
   window.iconX = function iconX() { return svg('<circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'); }
@@ -255,23 +232,20 @@ export default function AdminDashboard() {
   window.iconChevronLeft = function iconChevronLeft() { return svg('<polyline points="15 18 9 12 15 6"/>', 14); }
   window.iconChevronRight = function iconChevronRight() { return svg('<polyline points="9 18 15 12 9 6"/>', 14); }
 
-  /* =========================================================
-     PAGE : TABLEAU DE BORD ADMIN
-     ========================================================= */
   window.renderDashboard = function renderDashboard() {
     const s = STATS || {};
     const parStatut = s.rdvParStatut || {};
     const platformIncomplete = !PLATFORM.description || !PLATFORM.address || !PLATFORM.phone;
 
     const statCards = [
-      { label: "Professionnels au total", value: s.nbPros ?? 0, icon: iconBriefcase(), bg: "#F1ECFF", color: "#8957FF" },
-      { label: "Professionnels actifs", value: s.proActifs ?? 0, icon: iconCheck(), bg: "#E9F7ED", color: "#3FA65C" },
-      { label: "Professionnels désactivés", value: s.proDesactives ?? 0, icon: iconX(), bg: "#EEEDF2", color: "#8A8496" },
-      { label: "Réceptionnistes", value: s.nbRec ?? 0, icon: iconUsers(), bg: "#E6F7F5", color: "#2FA79D" },
-      { label: "Clients (au moins 1 RDV)", value: s.nbClients ?? 0, icon: iconUsers(), bg: "#FDF1E2", color: "#E2954A" },
-      { label: "Rendez-vous aujourd'hui", value: s.rdvAujourdhui ?? 0, icon: iconCal(), bg: "#F1ECFF", color: "#6B3FD9" },
-      { label: "Professionnels sans domaine", value: s.prosSansDomaine ?? 0, icon: iconTag(), bg: "#FDECF3", color: "#E2478A" },
-      { label: "Absences en cours ou à venir", value: s.absencesEnCours ?? 0, icon: iconAlert(), bg: "#FDF1E2", color: "#E2954A" },
+      { label: "Professionnels au total", value: s.nbPros ?? 0, icon: iconBriefcase(), bg: "linear-gradient(135deg,#E9E3FF,#D5C8FF)", color: "#7350E8" },
+      { label: "Professionnels actifs", value: s.proActifs ?? 0, icon: iconCheck(), bg: "linear-gradient(135deg,#E9F7ED,#CFEBD8)", color: "#3FA65C" },
+      { label: "Professionnels désactivés", value: s.proDesactives ?? 0, icon: iconX(), bg: "linear-gradient(135deg,#EEEDF2,#E2E0EA)", color: "#8A8496" },
+      { label: "Réceptionnistes", value: s.nbRec ?? 0, icon: iconUsers(), bg: "linear-gradient(135deg,#E6F7F5,#CFEDE8)", color: "#2FA79D" },
+      { label: "Clients (au moins 1 RDV)", value: s.nbClients ?? 0, icon: iconUsers(), bg: "linear-gradient(135deg,#FDF1E2,#FBE0BF)", color: "#E2954A" },
+      { label: "Rendez-vous aujourd'hui", value: s.rdvAujourdhui ?? 0, icon: iconCal(), bg: "linear-gradient(135deg,#E9E3FF,#9B7CF2)", color: "#FFFFFF" },
+      { label: "Professionnels sans domaine", value: s.prosSansDomaine ?? 0, icon: iconTag(), bg: "linear-gradient(135deg,#FDECF3,#F8D2E2)", color: "#E2478A" },
+      { label: "Absences en cours ou à venir", value: s.absencesEnCours ?? 0, icon: iconAlert(), bg: "linear-gradient(135deg,#FDF1E2,#FBE0BF)", color: "#E2954A" },
     ];
     const repartitionDomaines = s.repartitionDomaines || [];
     const maxDom = repartitionDomaines.length ? Math.max(...repartitionDomaines.map((d) => d.nbProfessionnels), 1) : 1;
@@ -290,7 +264,7 @@ export default function AdminDashboard() {
         <div><h1 class="page-title">Tableau de bord — Administration</h1><p class="page-sub">Supervision et statistiques globales de la plateforme</p></div>
         <button class="btn btn-ghost btn-sm" onclick="refreshAll()">${iconRefresh()} Actualiser</button>
       </div>
-      ${platformIncomplete ? `<div class="card" style="background:#FDF1E2;border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
+      ${platformIncomplete ? `<div class="card" style="background:linear-gradient(135deg,#FDF1E2,#FBE0BF);border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
         ${iconAlert()} Complétez les paramètres généraux de votre plateforme pour une meilleure présentation auprès de vos clients.
         <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="goToPage('params')">Compléter</button>
       </div>` : ""}
@@ -299,7 +273,7 @@ export default function AdminDashboard() {
         <div class="card">
           <div class="card-head"><h3>Réservations — répartition par état</h3><button class="btn btn-ghost btn-sm" onclick="goToPage('rdv')">Voir tout</button></div>
           <div style="display:flex;gap:10px;padding:18px 20px;flex-wrap:wrap;">
-            ${resCards.map((c) => `<div style="flex:1;min-width:110px;text-align:center;padding:12px;border:1px solid var(--line);border-radius:12px;"><span class="status-pill ${c.cls}" style="margin-bottom:8px;">${c.label}</span><div style="font-size:20px;font-weight:800;margin-top:8px;">${c.value}</div></div>`).join("")}
+            ${resCards.map((c) => `<div style="flex:1;min-width:110px;text-align:center;padding:12px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(135deg,#FBFAFF,#F4EFFF);"><span class="status-pill ${c.cls}" style="margin-bottom:8px;">${c.label}</span><div style="font-size:20px;font-weight:800;margin-top:8px;">${c.value}</div></div>`).join("")}
           </div>
           <div style="padding:0 20px 8px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);">
             <span>Total : <b style="color:var(--ink)">${s.nbRdv ?? 0}</b></span>
@@ -309,12 +283,12 @@ export default function AdminDashboard() {
           </div>
           <div style="padding:14px 20px 20px;">
             <div class="detail-item-label" style="margin-bottom:8px;">Services les plus réservés</div>
-            ${topServices.length ? topServices.map((t) => `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${esc(t.nom)}</span><b>${t.total}</b></div><div style="background:var(--paper);border-radius:999px;height:7px;overflow:hidden;"><div style="width:${(t.total / maxSv) * 100}%;background:var(--primary);height:100%;"></div></div></div>`).join("") : `<div class="table-empty">Aucune réservation enregistrée</div>`}
+            ${topServices.length ? topServices.map((t) => `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${esc(t.nom)}</span><b>${t.total}</b></div><div style="background:var(--primary-soft);border-radius:999px;height:7px;overflow:hidden;"><div style="width:${(t.total / maxSv) * 100}%;background:linear-gradient(90deg,#7350E8,#9B7CF2);height:100%;"></div></div></div>`).join("") : `<div class="table-empty">Aucune réservation enregistrée</div>`}
           </div>
           <div style="padding:0 20px 20px;">
             <div class="detail-item-label" style="margin-bottom:10px;">Évolution des rendez-vous (6 derniers mois)</div>
             <div style="display:flex;align-items:flex-end;gap:10px;height:110px;">
-              ${evolution.length ? evolution.map((e) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;justify-content:flex-end;height:100%;"><b style="font-size:11.5px;">${e.total}</b><div style="width:100%;background:var(--primary-tint);border-radius:8px 8px 0 0;height:${Math.max((e.total / maxEvo) * 100, 4)}%;"></div><span style="font-size:10.5px;color:var(--ink-soft)">${fmtMois(e.mois)}</span></div>`).join("") : `<div class="table-empty" style="width:100%">Aucune donnée</div>`}
+              ${evolution.length ? evolution.map((e) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;justify-content:flex-end;height:100%;"><b style="font-size:11.5px;">${e.total}</b><div style="width:100%;background:linear-gradient(180deg,#9B7CF2,#7350E8);border-radius:8px 8px 0 0;height:${Math.max((e.total / maxEvo) * 100, 4)}%;box-shadow:0 -4px 12px rgba(115,80,232,0.25);"></div><span style="font-size:10.5px;color:var(--ink-soft)">${fmtMois(e.mois)}</span></div>`).join("") : `<div class="table-empty" style="width:100%">Aucune donnée</div>`}
             </div>
           </div>
         </div>
@@ -323,7 +297,7 @@ export default function AdminDashboard() {
             <div class="card-head"><h3>Inscriptions en attente</h3></div>
             ${attente.map((x) => `
               <div class="dash-list-row">
-                <div class="avatar-sm" style="background:var(--ink-soft)">${initials(x.name)}</div>
+                <div class="avatar-sm" style="background:linear-gradient(135deg,#9B7CF2,#7350E8)">${initials(x.name)}</div>
                 <div style="flex:1"><div class="dash-list-name">${esc(x.name)}</div><div class="dash-list-sub">${x.type}</div></div>
                 <button class="btn btn-primary btn-sm" onclick="setCompteStatut('${x.userId}','actif')">${iconCheck()} Valider</button>
                 <button class="btn btn-danger-ghost btn-sm" onclick="setCompteStatut('${x.userId}','refuse')">Refuser</button>
@@ -336,7 +310,7 @@ export default function AdminDashboard() {
           <div class="card" style="margin-bottom:14px;">
             <div class="card-head"><h3>Répartition par domaine</h3><button class="btn btn-ghost btn-sm" onclick="goToPage('domaines')">Gérer</button></div>
             <div style="padding:14px 20px 18px;">
-              ${repartitionDomaines.length ? repartitionDomaines.map((d) => `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${esc(d.nom)}${d.actif ? "" : " (masqué)"}</span><b>${d.nbProfessionnels}</b></div><div style="background:var(--paper);border-radius:999px;height:7px;overflow:hidden;"><div style="width:${(d.nbProfessionnels / maxDom) * 100}%;background:${d.actif ? "var(--primary)" : "var(--ink-soft)"};height:100%;"></div></div></div>`).join("") : `<div class="table-empty">Aucun domaine d'activité défini</div>`}
+              ${repartitionDomaines.length ? repartitionDomaines.map((d) => `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${esc(d.nom)}${d.actif ? "" : " (masqué)"}</span><b>${d.nbProfessionnels}</b></div><div style="background:var(--primary-soft);border-radius:999px;height:7px;overflow:hidden;"><div style="width:${(d.nbProfessionnels / maxDom) * 100}%;background:${d.actif ? "linear-gradient(90deg,#7350E8,#9B7CF2)" : "linear-gradient(90deg,#A8A2BE,#8A8496)"};height:100%;"></div></div></div>`).join("") : `<div class="table-empty">Aucun domaine d'activité défini</div>`}
               ${(s.prosSansDomaine ?? 0) > 0 ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:10px;">${s.prosSansDomaine} professionnel(s) ne sont rattachés à aucun domaine. <a href="#" style="color:var(--primary-dark);font-weight:700;" onclick="event.preventDefault();filtrerProsSansDomaine()">Les afficher</a></div>` : ""}
             </div>
           </div>
@@ -349,9 +323,6 @@ export default function AdminDashboard() {
     `;
   }
 
-  /* =========================================================
-     PAGE : PROFESSIONNELS
-     ========================================================= */
   window.renderProsPage = function renderProsPage() {
     document.getElementById("page-pros").innerHTML = `
       <div class="page-head">
@@ -375,7 +346,6 @@ export default function AdminDashboard() {
     `;
     renderProsTable();
   }
-  /** Raccourci du tableau de bord : n'afficher que les professionnels non classés. */
   window.filtrerProsSansDomaine = function filtrerProsSansDomaine() {
     state.proFilter = { statut: "", search: "", domaineId: "AUCUN" };
     goToPage("pros");
@@ -392,7 +362,6 @@ export default function AdminDashboard() {
         domaineId: f.domaineId || undefined,
       });
       PROS_VIEW = data.map(mapPro);
-      // On oublie les lignes sélectionnées qui ne sont plus affichées.
       const visibles = new Set(PROS_VIEW.map((p) => p.userId));
       SELECTION.pros = new Set([...SELECTION.pros].filter((id) => visibles.has(id)));
       renderProsTable();
@@ -425,9 +394,6 @@ export default function AdminDashboard() {
     });
   }
 
-  /* =========================================================
-     SÉLECTION MULTIPLE ET ACTIONS GROUPÉES
-     ========================================================= */
   const SELECTION_SOURCE = { pros: () => PROS_VIEW, recs: () => RECS_VIEW };
   window.toggleSelection = function toggleSelection(scope, userId, checked) {
     if (checked) SELECTION[scope].add(userId); else SELECTION[scope].delete(userId);
@@ -444,13 +410,13 @@ export default function AdminDashboard() {
     if (!bar) return;
     const n = SELECTION[scope].size;
     if (!n) { bar.innerHTML = ""; return; }
-    bar.innerHTML = `<div class="card" style="padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--primary-tint);border-color:#D8CCFB;">
+    bar.innerHTML = `<div class="card" style="padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:linear-gradient(135deg, #7350E8 0%, #9B7CF2 100%);border-color:transparent;color:#fff;box-shadow:0 8px 20px rgba(115,80,232,0.35);">
       <b style="font-size:12.5px;">${n} compte(s) sélectionné(s)</b>
-      <button class="btn btn-primary btn-sm" onclick="applyBulkStatut('${scope}','actif')">${iconCheck()} Valider / activer</button>
-      <button class="btn btn-ghost btn-sm" onclick="applyBulkStatut('${scope}','desactive')">${iconX()} Désactiver</button>
-      <button class="btn btn-danger-ghost btn-sm" onclick="applyBulkStatut('${scope}','refuse')">Refuser</button>
-      <button class="btn btn-ghost btn-sm" onclick="openAnnonce('${scope}')">${iconSend()} Envoyer une annonce</button>
-      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="toggleAllSelection('${scope}', false)">Tout désélectionner</button>
+      <button class="btn btn-sm" style="background:#fff;color:#7350E8;" onclick="applyBulkStatut('${scope}','actif')">${iconCheck()} Valider / activer</button>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.35);" onclick="applyBulkStatut('${scope}','desactive')">${iconX()} Désactiver</button>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.35);" onclick="applyBulkStatut('${scope}','refuse')">Refuser</button>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.35);" onclick="openAnnonce('${scope}')">${iconSend()} Envoyer une annonce</button>
+      <button class="btn btn-sm" style="margin-left:auto;background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);" onclick="toggleAllSelection('${scope}', false)">Tout désélectionner</button>
     </div>`;
   }
   window.applyBulkStatut = async function applyBulkStatut(scope, statutUi) {
@@ -530,9 +496,6 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     ÉDITION DES FICHES (professionnel, réceptionniste, e-mail)
-     ========================================================= */
   window.openEditPro = async function openEditPro(id) {
     try {
       const p = await adminApi.getPro(id);
@@ -617,9 +580,6 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     COMPTES — statut, création, mot de passe, suppression
-     ========================================================= */
   window.setCompteStatut = async function setCompteStatut(userId, statutUi) {
     try {
       await adminApi.setStatut(userId, STATUT_API[statutUi]);
@@ -697,9 +657,6 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     PAGE : RÉCEPTIONNISTES
-     ========================================================= */
   window.renderRecPage = function renderRecPage() {
     document.getElementById("page-receptionnistes").innerHTML = `
       <div class="page-head">
@@ -817,9 +774,6 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     PAGE : UTILISATEURS (recherche globale)
-     ========================================================= */
   window.renderUsersPage = function renderUsersPage() {
     document.getElementById("page-users").innerHTML = `
       <div class="page-head"><div><h1 class="page-title">Utilisateurs</h1><p class="page-sub">Recherche globale — Professionnels, Réceptionnistes, Clients</p></div></div>
@@ -855,9 +809,6 @@ export default function AdminDashboard() {
     }).join("");
   }
 
-  /* =========================================================
-     PAGE : CLIENTS (global)
-     ========================================================= */
   window.renderClientsPage = function renderClientsPage() {
     document.getElementById("page-clients").innerHTML = `
       <div class="page-head"><div><h1 class="page-title">Clients</h1><p class="page-sub">Vue globale, tous professionnels confondus</p></div><button class="btn btn-ghost btn-sm" onclick="exportCsv('clients','clients.csv',{ search: state.clientsFilter.search || undefined })">${iconPrinter()} Exporter</button></div>
@@ -957,9 +908,6 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     PAGE : RÉSERVATIONS (global)
-     ========================================================= */
   window.renderRdvPage = function renderRdvPage() {
     const f = state.rdvFilter;
     document.getElementById("page-rdv").innerHTML = `
@@ -1063,10 +1011,6 @@ export default function AdminDashboard() {
       from: f.from || undefined, to: f.to || undefined, search: f.search || undefined,
     });
   }
-  /**
-   * Déplacement d'un créneau. Le serveur revérifie la disponibilité : un créneau
-   * déjà pris est refusé, la durée du service est conservée.
-   */
   window.openDeplacerRdv = function openDeplacerRdv(id, dateIso, heure) {
     const rdv = RESERVATIONS.find((r) => r.id === id);
     const date = dateIso || rdv?.date || todayISO();
@@ -1109,9 +1053,6 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     PAGE : SERVICES (global)
-     ========================================================= */
   window.renderServicesPage = function renderServicesPage() {
     document.getElementById("page-services").innerHTML = `
       <div class="page-head"><div><h1 class="page-title">Services</h1><p class="page-sub">Consultation et activation des services créés par les professionnels</p></div><button class="btn btn-ghost btn-sm" onclick="exportServicesCsv()">${iconPrinter()} Exporter</button></div>
@@ -1188,16 +1129,13 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     PAGE : AGENDAS (consultation seule)
-     ========================================================= */
   window.renderAgendasPage = function renderAgendasPage() {
     document.getElementById("page-agendas").innerHTML = `
       <div class="page-head"><div><h1 class="page-title">Agendas</h1><p class="page-sub">Consultation des disponibilités et des créneaux par professionnel</p></div><button class="btn btn-ghost btn-sm" onclick="refreshAll()">${iconRefresh()} Actualiser</button></div>
       <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
-        ${AGENDAS.length ? AGENDAS.map((a) => `<div class="card" style="padding:16px;">
+        ${AGENDAS.length ? AGENDAS.map((a) => `<div class="card" style="padding:16px;background:linear-gradient(180deg,#FFFFFF 0%,#FBFAFF 100%);">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div class="avatar-sm" style="background:${colorFor(a.professionnelId)}">${initials(a.nom)}</div><div><div style="font-weight:800;font-size:13.5px;">${esc(a.nom)}</div><div style="font-size:11.5px;color:var(--ink-soft)">${esc(a.specialite || "—")}</div></div></div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:6px;"><span>Rendez-vous à venir</span><b style="color:var(--ink)">${a.nbRdvAVenir}</b></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:6px;"><span>Rendez-vous à venir</span><b style="color:var(--primary-dark)">${a.nbRdvAVenir}</b></div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:6px;"><span>Jours travaillés</span><b style="color:var(--ink)">${a.joursTravailles.map((j) => JOURS[j].slice(0, 3)).join(", ") || "—"}</b></div>
           <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">${a.prochainRdv ? `Prochain : ${esc(a.prochainRdv.client)} — ${fmtDateTime(a.prochainRdv.dateDebut)}` : "Aucun rendez-vous à venir"}</div>
           ${a.indisponibilites.length ? `<div style="margin-bottom:10px;">${a.indisponibilites.map((i) => `<span class="status-pill st-absent" style="margin:2px 2px 2px 0;">${fmtDateShort(i.dateDebut)} → ${fmtDateShort(i.dateFin)}</span>`).join("")}</div>` : ""}
@@ -1232,9 +1170,6 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     PAGE : ABSENCES ET INDISPONIBILITÉS (tous professionnels)
-     ========================================================= */
   window.renderAbsencesPage = function renderAbsencesPage() {
     const f = state.indispoFilter;
     document.getElementById("page-absences").innerHTML = `
@@ -1294,9 +1229,6 @@ export default function AdminDashboard() {
     });
   }
 
-  /* =========================================================
-     PAGE : DOMAINES D'ACTIVITÉ
-     ========================================================= */
   window.renderDomainesPage = function renderDomainesPage() {
     const sansDomaine = PROS.filter((pr) => !pr.domaineId).length;
     document.getElementById("page-domaines").innerHTML = `
@@ -1307,7 +1239,7 @@ export default function AdminDashboard() {
           <button class="btn btn-ghost btn-sm" onclick="exportCsv('domaines','domaines.csv')">${iconPrinter()} Exporter</button>
         </div>
       </div>
-      ${sansDomaine ? `<div class="card" style="background:#FDF1E2;border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
+      ${sansDomaine ? `<div class="card" style="background:linear-gradient(135deg,#FDF1E2,#FBE0BF);border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
         ${iconAlert()} ${sansDomaine} professionnel(s) ne sont rattachés à aucun domaine.
         <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="filtrerProsSansDomaine()">Les classer</button>
       </div>` : ""}
@@ -1332,7 +1264,6 @@ export default function AdminDashboard() {
       </div></td>
     </tr>`).join("");
   }
-  /** Sans `id` : création. Avec : modification du domaine existant. */
   window.openDomaineForm = function openDomaineForm(id) {
     const d = id ? DOMAINES.find((x) => x.id === id) : null;
     if (id && !d) { showToast("Domaine introuvable — actualisez la page"); return; }
@@ -1385,9 +1316,6 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     PAGE : PARAMÈTRES GÉNÉRAUX DE LA PLATEFORME
-     ========================================================= */
   window.renderParamsPage = function renderParamsPage() {
     document.getElementById("page-params").innerHTML = `
       <div class="page-head"><div><h1 class="page-title">Paramètres généraux</h1><p class="page-sub">Ces informations sont affichées côté Client, dans l'interface publique</p></div></div>
@@ -1401,7 +1329,7 @@ export default function AdminDashboard() {
         <div class="field-row"><label>Adresse</label><input type="text" id="plAddress" value="${esc(PLATFORM.address || "")}" /></div>
         <div class="field-row"><label>Jours ouvrables par défaut</label>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${JOURS.map((d) => `<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;border:1px solid var(--line);padding:6px 10px;border-radius:8px;"><input type="checkbox" id="jour_${d}" ${(PLATFORM.joursOuvrables || []).includes(d) ? "checked" : ""} /> ${d}</label>`).join("")}
+            ${JOURS.map((d) => `<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;border:1px solid var(--line);padding:6px 10px;border-radius:8px;background:linear-gradient(135deg,#FBFAFF,#F4EFFF);"><input type="checkbox" id="jour_${d}" ${(PLATFORM.joursOuvrables || []).includes(d) ? "checked" : ""} /> ${d}</label>`).join("")}
           </div>
         </div>
         <div class="field-row"><label>Horaires généraux par défaut</label><input type="text" id="plHoraires" value="${esc(PLATFORM.horairesGeneraux || "")}" placeholder="09:00 – 18:00" /></div>
@@ -1452,9 +1380,6 @@ export default function AdminDashboard() {
       updateBadges();
     } catch (e) { showError(e); }
   }
-  /* =========================================================
-     PAGE : JOURNAL D'AUDIT
-     ========================================================= */
   window.renderAuditPage = function renderAuditPage() {
     const f = state.auditFilter;
     document.getElementById("page-audit").innerHTML = `
@@ -1503,12 +1428,9 @@ export default function AdminDashboard() {
     }
   }
 
-  /* =========================================================
-     PAGE : NOTIFICATIONS
-     ========================================================= */
   const NOTIF_ICONS = {
-    new: { bg: "#F1ECFF", color: "#8957FF", svg: '<path d="M12 5v14M5 12h14"/>' },
-    warn: { bg: "#FDF1E2", color: "#E2954A", svg: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>' },
+    new: { bg: "linear-gradient(135deg,#E9E3FF,#D5C8FF)", color: "#7350E8", svg: '<path d="M12 5v14M5 12h14"/>' },
+    warn: { bg: "linear-gradient(135deg,#FDF1E2,#FBE0BF)", color: "#E2954A", svg: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>' },
   };
   window.notifRowHtml = function notifRowHtml(n) {
     const ic = NOTIF_ICONS[n.type] || NOTIF_ICONS.new;
@@ -1520,11 +1442,6 @@ export default function AdminDashboard() {
       <div class="card">${NOTIFS.length ? NOTIFS.map((n) => notifRowHtml(n)).join("") : `<div class="table-empty">Aucune notification</div>`}</div>
     `;
   }
-  /**
-   * Annonce diffusée par l'Admin. Appelée sans argument depuis la page
-   * Notifications, ou avec `scope` ("pros" / "recs") pour n'écrire qu'aux
-   * comptes cochés dans le tableau correspondant.
-   */
   window.openAnnonce = function openAnnonce(scope) {
     const selection = scope ? [...SELECTION[scope]] : [];
     openModal(`
@@ -1560,18 +1477,11 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     EXPORTS CSV
-     ========================================================= */
-  // `params` = les filtres de la page : l'export reprend ce qui est affiché.
   window.exportCsv = async function exportCsv(entity, filename, params) {
     try { await adminApi.downloadExport(entity, filename, params); showToast(`${iconPrinter()} Export « ${filename} » téléchargé`); }
     catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     MODALS génériques
-     ========================================================= */
   window.closeModal = function closeModal() {
     const root = document.getElementById("modalRoot");
     if (!root) return;
@@ -1585,9 +1495,6 @@ export default function AdminDashboard() {
     ov.addEventListener("click", (e) => { if (e.target === ov) closeModal(); });
   }
 
-  /* =========================================================
-     RECHERCHE GLOBALE + INITIALISATION
-     ========================================================= */
   document.getElementById("globalSearch").addEventListener("input", debounce(function () {
     const q = this.value.trim();
     if (q.length < 2) return;
@@ -1604,7 +1511,6 @@ export default function AdminDashboard() {
 
     return () => {
       ac.abort();
-
       delete (window as any).todayISO;
       delete (window as any).isoPlusDays;
       delete (window as any).toDay;
@@ -1753,16 +1659,30 @@ export default function AdminDashboard() {
     <>
       <style>{`
   :root {
-    --primary: #8957FF;
-    --primary-dark: #6B3FD9;
-    --primary-tint: #F1ECFF;
+    --primary: #7350E8;
+    --primary-light: #9B7CF2;
+    --primary-soft: #E9E3FF;
+    --primary-dark: #5A3BC7;
+    --primary-tint: #E9E3FF;
     --ink: #1B1730;
     --ink-soft: #6B6580;
-    --paper: #F7F6FB;
+    --paper: #F6F4FC;
     --card: #FFFFFF;
     --line: #E7E3F3;
     --radius: 14px;
-    --st-reserve: #8957FF;
+
+    --grad-primary: linear-gradient(135deg, #7350E8 0%, #9B7CF2 100%);
+    --grad-primary-deep: linear-gradient(135deg, #7350E8 0%, #5A3BC7 100%);
+    --grad-primary-hover: linear-gradient(135deg, #9B7CF2 0%, #7350E8 100%);
+    --grad-sidebar: linear-gradient(175deg, #7350E8 0%, #6543D4 45%, #4B2DAF 100%);
+    --grad-soft: linear-gradient(135deg, #E9E3FF 0%, #F6F2FF 100%);
+    --grad-soft-reverse: linear-gradient(135deg, #F6F2FF 0%, #E9E3FF 100%);
+    --grad-soft-vertical: linear-gradient(180deg, #FFFFFF 0%, #F4EFFF 100%);
+    --grad-soft-horizontal: linear-gradient(90deg, #E9E3FF 0%, #FBFAFF 60%);
+    --grad-avatar: linear-gradient(135deg, #9B7CF2, #7350E8);
+    --grad-page-bg: linear-gradient(160deg, #F6F4FC 0%, #EFEAFF 45%, #F6F4FC 100%);
+
+    --st-reserve: #7350E8;
     --st-arrive: #2FA79D;
     --st-encours: #E2954A;
     --st-termine: #3FA65C;
@@ -1770,132 +1690,317 @@ export default function AdminDashboard() {
     --st-annule: #D9483C;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--paper); color: var(--ink); }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--grad-page-bg);
+    background-attachment: fixed;
+    color: var(--ink);
+    min-height: 100vh;
+  }
   button, input, select, textarea { font-family: inherit; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #9B7CF2, #7350E8); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #7350E8, #5A3BC7); }
+  ::-webkit-scrollbar-track { background: #F0ECFA; }
 
   .app { display: flex; min-height: 100vh; }
 
   /* ---------- Sidebar ---------- */
   .sidebar {
-    width: 240px; flex-shrink: 0; background: var(--card); border-right: 1px solid var(--line);
-    display: flex; flex-direction: column; padding: 20px 14px; position: sticky; top: 0; height: 100vh;
+    width: 240px; flex-shrink: 0;
+    background: var(--grad-sidebar);
+    border-right: none;
+    display: flex; flex-direction: column; padding: 20px 14px;
+    position: sticky; top: 0; height: 100vh;
     transition: width .25s ease, padding .25s ease;
+    color: #fff;
+    box-shadow: 6px 0 28px rgba(115, 80, 232, 0.32);
+    overflow: hidden;
+  }
+  .sidebar::before {
+    content: ""; position: absolute; top: -80px; right: -80px;
+    width: 220px; height: 220px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(155,124,242,0.6) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .sidebar::after {
+    content: ""; position: absolute; bottom: -110px; left: -70px;
+    width: 220px; height: 220px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(233,227,255,0.3) 0%, transparent 70%);
+    pointer-events: none;
   }
   .sidebar.collapsed { width: 76px; }
-  .sb-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; }
-  .sb-logo { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; flex-shrink: 0; }
-  .sb-brand-text { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; }
+  .sb-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; position: relative; z-index: 1; }
+  .sb-logo {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, #E9E3FF 0%, #9B7CF2 100%);
+    color: #3A2090;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 16px; flex-shrink: 0;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.6);
+  }
+  .sb-brand-text { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; color: #fff; }
   .sidebar.collapsed .sb-brand-text, .sidebar.collapsed .nav-label, .sidebar.collapsed .sb-section-title { display: none; }
 
-  .sb-section-title { font-size: 10.5px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .07em; margin: 14px 10px 8px; }
+  .sb-section-title {
+    font-size: 10.5px; font-weight: 700; color: rgba(233,227,255,0.72);
+    text-transform: uppercase; letter-spacing: .09em; margin: 14px 10px 8px;
+    position: relative; z-index: 1;
+  }
   .nav-item {
     display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 11px;
-    color: var(--ink-soft); font-size: 13.5px; font-weight: 600; cursor: pointer; margin-bottom: 3px;
-    transition: background .15s ease, color .15s ease; position: relative; white-space: nowrap;
+    color: rgba(255,255,255,0.85); font-size: 13.5px; font-weight: 600; cursor: pointer;
+    margin-bottom: 3px; position: relative; white-space: nowrap;
+    transition: background .18s ease, color .18s ease, transform .12s ease;
+    z-index: 1;
   }
-  .nav-item:hover { background: var(--paper); color: var(--ink); }
-  .nav-item.active { background: var(--primary-tint); color: var(--primary-dark); }
+  .nav-item:hover {
+    background: linear-gradient(135deg, rgba(233,227,255,0.2), rgba(155,124,242,0.25));
+    color: #fff;
+    transform: translateX(2px);
+  }
+  .nav-item.active {
+    background: linear-gradient(135deg, #E9E3FF 0%, #9B7CF2 100%);
+    color: #3A2090;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.6);
+    font-weight: 700;
+  }
+  .nav-item.active::before {
+    content: ""; position: absolute; left: -14px; top: 50%; transform: translateY(-50%);
+    width: 4px; height: 22px; border-radius: 0 4px 4px 0; background: #fff;
+    box-shadow: 0 0 14px rgba(255,255,255,0.9);
+  }
   .nav-item svg { flex-shrink: 0; }
-  .nav-badge { margin-left: auto; background: var(--primary); color: #fff; font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 1px 7px; }
+  .nav-badge {
+    margin-left: auto;
+    background: #fff; color: var(--primary-dark);
+    font-size: 10.5px; font-weight: 800; border-radius: 999px; padding: 1px 7px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .nav-item.active .nav-badge { background: var(--primary-dark); color: #E9E3FF; }
   .sidebar.collapsed .nav-badge { position: absolute; top: 4px; right: 4px; margin-left: 0; padding: 1px 5px; }
 
   .sb-collapse-btn {
-    margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 11px;
-    color: var(--ink-soft); font-size: 12.5px; font-weight: 600; cursor: pointer; border: 1px solid var(--line); background: none;
+    margin-top: auto; display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 11px;
+    color: rgba(255,255,255,0.9); font-size: 12.5px; font-weight: 600;
+    cursor: pointer; border: 1px solid rgba(233,227,255,0.3);
+    background: linear-gradient(135deg, rgba(233,227,255,0.15), rgba(155,124,242,0.18));
+    position: relative; z-index: 1;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
   }
-  .sb-collapse-btn:hover { background: var(--paper); }
+  .sb-collapse-btn:hover {
+    background: linear-gradient(135deg, rgba(233,227,255,0.28), rgba(155,124,242,0.35));
+    border-color: rgba(233,227,255,0.55);
+    color: #fff;
+  }
 
   /* ---------- Main / Topbar ---------- */
   .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .topbar {
-    height: 68px; flex-shrink: 0; background: var(--card); border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 16px; padding: 0 26px; position: sticky; top: 0; z-index: 20;
+    height: 68px; flex-shrink: 0;
+    background: var(--grad-soft-vertical);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; padding: 0 26px;
+    position: sticky; top: 0; z-index: 20;
+    box-shadow: 0 2px 18px rgba(115, 80, 232, 0.1);
   }
   .tb-search { flex: 1; max-width: 460px; position: relative; }
   .tb-search input {
-    width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px 9px 38px;
-    font-size: 13px; background: var(--paper); color: var(--ink); outline: none; transition: border-color .15s ease;
+    width: 100%; border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 9px 14px 9px 38px; font-size: 13px;
+    background: linear-gradient(135deg, #F6F4FC 0%, #EFEAFF 100%);
+    color: var(--ink); outline: none;
+    transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
   }
-  .tb-search input:focus { border-color: var(--primary); }
-  .tb-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ink-soft); }
+  .tb-search input:focus {
+    border-color: var(--primary); background: #fff;
+    box-shadow: 0 0 0 3px rgba(115, 80, 232, 0.18);
+  }
+  .tb-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--primary-dark); }
   .tb-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
-  .tb-icon-btn { position: relative; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); transition: background .15s ease; }
-  .tb-icon-btn:hover { background: var(--paper); }
-  .tb-icon-dot { position: absolute; top: -5px; right: -5px; background: var(--st-annule); color: #fff; font-size: 10px; font-weight: 700; border-radius: 999px; min-width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; padding: 0 3px; border: 2px solid var(--card); }
+  .tb-icon-btn {
+    position: relative; width: 38px; height: 38px; border-radius: 10px;
+    border: 1.5px solid var(--line);
+    background: linear-gradient(135deg, #FFFFFF 0%, #F4EFFF 100%);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    color: var(--primary-dark);
+    transition: background .15s ease, border-color .15s ease, transform .12s ease, box-shadow .15s ease;
+  }
+  .tb-icon-btn:hover {
+    background: var(--grad-primary);
+    color: #fff;
+    border-color: transparent;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(115, 80, 232, 0.35);
+  }
+  .tb-icon-dot {
+    position: absolute; top: -5px; right: -5px;
+    background: linear-gradient(135deg, #E2478A, #D9483C);
+    color: #fff; font-size: 10px; font-weight: 700;
+    border-radius: 999px; min-width: 17px; height: 17px; display: flex;
+    align-items: center; justify-content: center; padding: 0 3px;
+    border: 2px solid var(--card);
+    box-shadow: 0 3px 8px rgba(217, 72, 60, 0.4);
+  }
   .tb-user { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-  .tb-avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, #FFB86B, #FF6BAE); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
+  .tb-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: var(--grad-avatar);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 14px;
+    box-shadow: 0 6px 16px rgba(115, 80, 232, 0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+  }
   .tb-user-text { line-height: 1.3; }
   .tb-user-name { font-size: 13px; font-weight: 700; }
-  .tb-user-role { font-size: 11px; color: var(--ink-soft); }
+  .tb-user-role {
+    font-size: 11px; font-weight: 700;
+    background: var(--grad-primary);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
 
   .page { padding: 26px 30px 60px; display: none; }
   .page.active { display: block; }
   .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
-  .page-title { font-size: 23px; font-weight: 800; margin: 0 0 4px; }
+  .page-title {
+    font-size: 23px; font-weight: 800; margin: 0 0 4px;
+    background: var(--grad-primary-deep);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
   .page-sub { font-size: 13px; color: var(--ink-soft); margin: 0; }
 
   .btn {
-    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; border: none;
-    border-radius: 10px; padding: 10px 16px; cursor: pointer; transition: transform .1s ease, opacity .15s ease, background .15s ease;
+    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700;
+    border: none; border-radius: 10px; padding: 10px 16px; cursor: pointer;
+    transition: transform .1s ease, opacity .15s ease, background .15s ease, box-shadow .15s ease;
   }
   .btn:hover { transform: translateY(-1px); }
-  .btn-primary { background: var(--primary); color: #fff; }
-  .btn-primary:hover { background: var(--primary-dark); }
-  .btn-ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
-  .btn-ghost:hover { background: var(--paper); }
+  .btn-primary {
+    background: var(--grad-primary);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(115, 80, 232, 0.4);
+  }
+  .btn-primary:hover {
+    background: var(--grad-primary-hover);
+    box-shadow: 0 10px 26px rgba(115, 80, 232, 0.55);
+  }
+  .btn-ghost {
+    background: linear-gradient(135deg, #FFFFFF, #F6F4FC);
+    color: var(--primary-dark);
+    border: 1.5px solid var(--line);
+    font-weight: 700;
+  }
+  .btn-ghost:hover {
+    background: var(--grad-soft);
+    border-color: var(--primary-light);
+    color: var(--primary-dark);
+    box-shadow: 0 6px 14px rgba(115, 80, 232, 0.18);
+  }
   .btn-sm { padding: 7px 12px; font-size: 12px; }
-  .btn-danger-ghost { background: #FDEDEC; color: var(--st-annule); border: 1px solid #F7D3D0; }
+  .btn-danger-ghost { background: linear-gradient(135deg, #FDEDEC, #FBDAD7); color: var(--st-annule); border: 1px solid #F7D3D0; }
+  .btn-danger-ghost:hover { background: linear-gradient(135deg, #FBDAD7, #F7C5C1); }
 
   /* ---------- Cards / stats ---------- */
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 24px; }
-  .stat-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
-  .stat-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
-  .stat-value { font-size: 22px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
-  .stat-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; }
+  .stat-card {
+    background: linear-gradient(180deg, #FFFFFF 0%, #FBFAFF 100%);
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .stat-card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--grad-primary);
+    opacity: 0; transition: opacity .2s ease;
+  }
+  .stat-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--primary-light);
+    box-shadow: 0 16px 32px rgba(115, 80, 232, 0.22);
+  }
+  .stat-card:hover::before { opacity: 1; }
+  .stat-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; position: relative; z-index: 1; }
+  .stat-value { font-size: 22px; font-weight: 800; line-height: 1; margin-bottom: 4px; position: relative; z-index: 1; }
+  .stat-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; position: relative; z-index: 1; }
 
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
-  .card-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
-  .card-head h3 { font-size: 14.5px; margin: 0; }
+  .card {
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    background: var(--grad-soft-vertical);
+  }
+  .card-head h3 { font-size: 14.5px; margin: 0; color: var(--primary-dark); }
 
   .status-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
   .status-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .st-reserve { background: #F1ECFF; color: var(--st-reserve); }
-  .st-arrive { background: #E6F7F5; color: var(--st-arrive); }
-  .st-encours { background: #FDF1E2; color: var(--st-encours); }
-  .st-termine { background: #E9F7ED; color: var(--st-termine); }
-  .st-absent { background: #EEEDF2; color: var(--st-absent); }
-  .st-annule { background: #FDEDEC; color: var(--st-annule); }
+  .st-reserve { background: linear-gradient(135deg, #E9E3FF 0%, #D5C8FF 100%); color: var(--primary-dark); }
+  .st-arrive { background: linear-gradient(135deg, #E6F7F5 0%, #D4F0EB 100%); color: var(--st-arrive); }
+  .st-encours { background: linear-gradient(135deg, #FDF1E2 0%, #FBE4C8 100%); color: var(--st-encours); }
+  .st-termine { background: linear-gradient(135deg, #E9F7ED 0%, #D5EFDD 100%); color: var(--st-termine); }
+  .st-absent { background: linear-gradient(135deg, #EEEDF2 0%, #E2E0EA 100%); color: var(--st-absent); }
+  .st-annule { background: linear-gradient(135deg, #FDEDEC 0%, #FBD8D4 100%); color: var(--st-annule); }
 
   .avatar-sm { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; flex-shrink: 0; }
 
-  /* ---------- Dashboard: prochain RDV + mini agenda ---------- */
+  /* ---------- Dashboard ---------- */
   .dash-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; align-items: start; }
   @media (max-width: 980px) { .dash-grid { grid-template-columns: 1fr; } }
-  .next-rdv-card { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border-radius: var(--radius); padding: 20px 22px; color: #fff; margin-bottom: 18px; }
-  .next-rdv-eyebrow { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; opacity: .8; margin: 0 0 8px; }
-  .next-rdv-name { font-size: 18px; font-weight: 800; margin: 0 0 2px; }
-  .next-rdv-meta { font-size: 12.5px; opacity: .9; }
-  .next-rdv-time { font-size: 26px; font-weight: 800; margin-top: 10px; }
-  .dash-list-row { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .next-rdv-card {
+    background: var(--grad-primary);
+    border-radius: var(--radius); padding: 20px 22px; color: #fff;
+    margin-bottom: 18px;
+    box-shadow: 0 16px 36px rgba(115, 80, 232, 0.4);
+    position: relative; overflow: hidden;
+  }
+  .next-rdv-card::before {
+    content: ""; position: absolute; top: -60px; right: -60px;
+    width: 180px; height: 180px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(233,227,255,0.4) 0%, transparent 70%);
+  }
+  .next-rdv-eyebrow { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; opacity: .9; margin: 0 0 8px; position: relative; }
+  .next-rdv-name { font-size: 18px; font-weight: 800; margin: 0 0 2px; position: relative; }
+  .next-rdv-meta { font-size: 12.5px; opacity: .95; position: relative; }
+  .next-rdv-time { font-size: 26px; font-weight: 800; margin-top: 10px; position: relative; }
+  .dash-list-row { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); font-size: 13px; transition: background .15s ease; }
   .dash-list-row:last-child { border-bottom: none; }
-  .dash-list-time { font-weight: 700; width: 52px; flex-shrink: 0; color: var(--ink-soft); font-size: 12px; }
+  .dash-list-row:hover { background: var(--grad-soft-horizontal); }
+  .dash-list-time { font-weight: 700; width: 52px; flex-shrink: 0; color: var(--primary-dark); font-size: 12px; }
   .dash-list-name { font-weight: 700; flex: 1; }
   .dash-list-sub { font-size: 11.5px; color: var(--ink-soft); }
 
   /* ---------- Agenda ---------- */
   .agenda-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-  .view-toggle { display: flex; background: var(--paper); border-radius: 10px; padding: 3px; gap: 2px; }
-  .view-toggle button { border: none; background: none; padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
-  .view-toggle button.active { background: var(--card); color: var(--primary-dark); box-shadow: 0 1px 3px rgba(18,36,47,0.12); }
+  .view-toggle { display: flex; background: var(--grad-soft); border-radius: 10px; padding: 3px; gap: 2px; }
+  .view-toggle button { border: none; background: none; padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 700; color: var(--primary-dark); cursor: pointer; }
+  .view-toggle button.active {
+    background: var(--grad-primary);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(115, 80, 232, 0.35);
+  }
   .date-nav { display: flex; align-items: center; gap: 6px; }
-  .date-nav button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); }
+  .date-nav button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: linear-gradient(135deg, #FFFFFF, #F6F4FC); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--primary-dark); transition: background .15s ease, border-color .15s ease, color .15s ease; }
+  .date-nav button:hover { background: var(--grad-primary); color: #fff; border-color: transparent; }
   .date-nav-label { font-size: 13.5px; font-weight: 700; padding: 0 4px; min-width: 150px; text-align: center; }
 
   .pro-filter-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 18px; }
-  .pro-chip { display: flex; align-items: center; gap: 9px; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 14px 8px 8px; cursor: pointer; flex-shrink: 0; transition: border-color .15s ease, background .15s ease; }
-  .pro-chip.active { border-color: var(--primary); background: var(--primary-tint); }
+  .pro-chip { display: flex; align-items: center; gap: 9px; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 14px 8px 8px; cursor: pointer; flex-shrink: 0; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+  .pro-chip.active {
+    border-color: var(--primary);
+    background: var(--grad-soft);
+    box-shadow: 0 6px 16px rgba(115, 80, 232, 0.2);
+  }
   .pro-chip-name { font-size: 12.5px; font-weight: 700; line-height: 1.3; }
   .pro-chip-role { font-size: 10.5px; color: var(--ink-soft); }
   .pro-chip-dot { width: 8px; height: 8px; border-radius: 50%; margin-left: 4px; }
@@ -1904,7 +2009,7 @@ export default function AdminDashboard() {
   @media (max-width: 1100px) { .agenda-body { grid-template-columns: 1fr; } }
 
   .day-grid { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-  .day-grid-head { display: grid; border-bottom: 1px solid var(--line); }
+  .day-grid-head { display: grid; border-bottom: 1px solid var(--line); background: var(--grad-soft-vertical); }
   .day-col-head { padding: 12px 10px; text-align: center; border-left: 1px solid var(--line); }
   .day-col-head:first-child { border-left: none; }
   .day-col-head-name { font-size: 12.5px; font-weight: 700; }
@@ -1912,29 +2017,31 @@ export default function AdminDashboard() {
   .day-grid-body { display: grid; position: relative; }
   .day-hour-row { display: contents; }
   .hour-label { font-size: 10.5px; color: var(--ink-soft); padding: 2px 8px 0 0; text-align: right; border-top: 1px solid var(--line); position: relative; top: -6px; }
-  .day-col { border-left: 1px solid var(--line); border-top: 1px solid var(--line); min-height: 46px; position: relative; cursor: pointer; }
-  .day-col:hover { background: var(--paper); }
+  .day-col { border-left: 1px solid var(--line); border-top: 1px solid var(--line); min-height: 46px; position: relative; cursor: pointer; transition: background .15s ease; }
+  .day-col:hover { background: var(--grad-soft); }
   .appt-block {
     position: absolute; left: 4px; right: 4px; border-radius: 8px; padding: 5px 7px; overflow: hidden;
-    font-size: 11px; cursor: pointer; border-left: 3px solid; box-shadow: 0 2px 6px rgba(18,36,47,0.08);
+    font-size: 11px; cursor: pointer; border-left: 3px solid;
+    box-shadow: 0 4px 10px rgba(115, 80, 232, 0.2);
     transition: transform .1s ease, box-shadow .1s ease; z-index: 2;
   }
-  .appt-block:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(18,36,47,0.18); z-index: 3; }
+  .appt-block:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(115, 80, 232, 0.32); z-index: 3; }
   .appt-block b { display: block; font-size: 11.5px; line-height: 1.3; }
   .appt-block span { display: block; opacity: .85; font-size: 10px; }
   .appt-dragging { opacity: .5; }
-  .day-col.drop-hover { background: var(--primary-tint); }
+  .day-col.drop-hover { background: var(--grad-soft); }
 
-  .mini-cal { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
-  .mini-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; font-weight: 700; }
-  .mini-cal-head button { border: none; background: var(--paper); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; color: var(--ink-soft); }
+  .mini-cal { background: var(--card); border: 1.5px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .mini-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; font-weight: 700; color: var(--primary-dark); }
+  .mini-cal-head button { border: none; background: var(--grad-soft); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; color: var(--primary-dark); }
+  .mini-cal-head button:hover { background: var(--grad-primary); color: #fff; }
   .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; }
-  .mini-cal-dow { font-size: 10px; font-weight: 700; color: var(--ink-soft); padding-bottom: 4px; }
+  .mini-cal-dow { font-size: 10px; font-weight: 700; color: var(--primary-dark); padding-bottom: 4px; }
   .mini-cal-day { font-size: 11.5px; padding: 6px 0; border-radius: 7px; cursor: pointer; color: var(--ink); }
-  .mini-cal-day:hover { background: var(--paper); }
+  .mini-cal-day:hover { background: var(--grad-soft); }
   .mini-cal-day.muted { color: #C7C2D6; }
-  .mini-cal-day.today { border: 1.5px solid var(--primary); font-weight: 700; }
-  .mini-cal-day.selected { background: var(--primary); color: #fff; font-weight: 700; }
+  .mini-cal-day.today { border: 1.5px solid var(--primary); font-weight: 700; color: var(--primary-dark); }
+  .mini-cal-day.selected { background: var(--grad-primary); color: #fff; font-weight: 700; box-shadow: 0 4px 12px rgba(115, 80, 232, 0.4); }
   .mini-cal-day.has-appt::after { content: ""; display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--primary); margin: 2px auto 0; }
   .mini-cal-day.selected.has-appt::after { background: #fff; }
 
@@ -1945,33 +2052,68 @@ export default function AdminDashboard() {
   /* week/month simplified views */
   .week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
   .week-day-col { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 220px; }
+  .week-day-col:hover { border-color: var(--primary-light); }
   .week-day-head { font-size: 11.5px; font-weight: 700; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); text-align: center; }
   .week-day-head.today { color: var(--primary-dark); }
   .week-appt-chip { font-size: 10.5px; padding: 5px 7px; border-radius: 7px; margin-bottom: 5px; border-left: 3px solid; cursor: pointer; }
   .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
   .month-dow { font-size: 11px; font-weight: 700; color: var(--ink-soft); text-align: center; padding-bottom: 4px; }
-  .month-cell { background: var(--card); border: 1px solid var(--line); border-radius: 10px; min-height: 84px; padding: 6px 8px; cursor: pointer; font-size: 11.5px; }
-  .month-cell:hover { border-color: var(--primary); }
+  .month-cell { background: var(--card); border: 1px solid var(--line); border-radius: 10px; min-height: 84px; padding: 6px 8px; cursor: pointer; font-size: 11.5px; transition: border-color .15s ease, box-shadow .15s ease; }
+  .month-cell:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(115, 80, 232, 0.15); }
   .month-cell.muted { opacity: .4; }
   .month-cell.today { border-color: var(--primary); border-width: 1.5px; }
   .month-cell-num { font-weight: 700; margin-bottom: 4px; }
-  .month-cell-count { display: inline-block; background: var(--primary-tint); color: var(--primary-dark); font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
+  .month-cell-count {
+    display: inline-block;
+    background: var(--grad-primary);
+    color: #fff; font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border-radius: 999px;
+  }
 
   /* ---------- Tables ---------- */
   .filter-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-  .filter-row select, .filter-row input { border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; font-size: 12.5px; background: var(--card); color: var(--ink); }
+  .filter-row select, .filter-row input {
+    border: 1.5px solid var(--line); border-radius: 9px;
+    padding: 8px 12px; font-size: 12.5px;
+    background: linear-gradient(135deg, #FFFFFF, #FBFAFF);
+    color: var(--ink);
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .filter-row select:focus, .filter-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(115, 80, 232, 0.18); background: #fff; }
   table.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.data-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); font-weight: 700; padding: 10px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.data-table th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--primary-dark); font-weight: 800;
+    padding: 12px 16px;
+    border-bottom: 1.5px solid var(--line); white-space: nowrap;
+    background: var(--grad-primary);
+    color: #fff;
+  }
+  table.data-table th:first-child { border-top-left-radius: 0; }
+  table.data-table th:last-child { border-top-right-radius: 0; }
   table.data-table td { padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   table.data-table tr:last-child td { border-bottom: none; }
   table.data-table tr.row-clickable { cursor: pointer; transition: background .12s ease; }
-  table.data-table tr.row-clickable:hover { background: var(--paper); }
+  table.data-table tr.row-clickable:hover { background: var(--grad-soft-horizontal); }
   .cell-client { display: flex; align-items: center; gap: 10px; }
   .cell-client-name { font-weight: 700; }
   .cell-client-sub { font-size: 11px; color: var(--ink-soft); }
   .row-actions { display: flex; gap: 6px; }
-  .icon-btn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); }
-  .icon-btn:hover { background: var(--paper); color: var(--ink); }
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 8px;
+    border: 1px solid var(--line);
+    background: linear-gradient(135deg, #FFFFFF, #F6F4FC);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    color: var(--primary-dark);
+    transition: background .15s ease, color .15s ease, border-color .15s ease, transform .12s ease, box-shadow .15s ease;
+  }
+  .icon-btn:hover {
+    background: var(--grad-primary);
+    color: #fff;
+    border-color: transparent;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(115, 80, 232, 0.35);
+  }
   .repeat-warning { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: var(--st-annule); background: #FDEDEC; padding: 2px 8px; border-radius: 999px; margin-left: 6px; }
 
   .table-empty { padding: 40px 20px; text-align: center; color: var(--ink-soft); font-size: 13px; }
@@ -1979,45 +2121,79 @@ export default function AdminDashboard() {
   /* ---------- Notifications ---------- */
   .notif-row { display: flex; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); align-items: flex-start; }
   .notif-row:last-child { border-bottom: none; }
-  .notif-row.unread { background: #FBFAFF; }
+  .notif-row.unread { background: var(--grad-soft-horizontal); }
   .notif-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .notif-text { font-size: 12.5px; line-height: 1.5; }
   .notif-text b { font-weight: 700; }
   .notif-time { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
-  .notif-dot-unread { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); margin-left: auto; margin-top: 6px; flex-shrink: 0; }
+  .notif-dot-unread {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--grad-primary);
+    margin-left: auto; margin-top: 6px; flex-shrink: 0;
+    box-shadow: 0 0 10px rgba(115, 80, 232, 0.8);
+  }
 
   /* ---------- Modals ---------- */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(27,23,48,0.5); backdrop-filter: blur(2px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; transition: opacity .2s ease; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(58, 32, 144, 0.55); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; transition: opacity .2s ease; }
   .modal-overlay.open { opacity: 1; }
-  .modal-box { width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto; background: var(--card); border-radius: 18px; box-shadow: 0 40px 80px -20px rgba(10,10,26,0.5); padding: 24px 26px; transform: translateY(14px) scale(.98); transition: transform .22s ease; }
+  .modal-box {
+    width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto;
+    background: var(--card); border-radius: 18px;
+    box-shadow: 0 40px 80px -20px rgba(58, 30, 130, 0.55), 0 0 0 1px rgba(155,124,242,0.15);
+    padding: 24px 26px; transform: translateY(14px) scale(.98);
+    transition: transform .22s ease;
+    border-top: 4px solid transparent;
+    background-image: linear-gradient(var(--card), var(--card)), var(--grad-primary);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+  }
   .modal-overlay.open .modal-box { transform: translateY(0) scale(1); }
   .modal-box.wide { max-width: 640px; }
-  .modal-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
-  .modal-title { font-size: 17px; font-weight: 800; margin: 0 0 2px; }
+  .modal-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .modal-title { font-size: 17px; font-weight: 800; margin: 0 0 2px; color: var(--primary-dark); }
   .modal-sub { font-size: 12px; color: var(--ink-soft); margin: 0; }
-  .modal-close { border: none; background: var(--paper); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; color: var(--ink-soft); font-size: 16px; flex-shrink: 0; }
+  .modal-close { border: none; background: var(--grad-soft); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; color: var(--primary-dark); font-size: 16px; flex-shrink: 0; transition: background .15s ease, color .15s ease; }
+  .modal-close:hover { background: var(--grad-primary); color: #fff; }
   .field-row { margin-bottom: 13px; }
-  .field-row label { display: block; font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-bottom: 5px; }
-  .field-row input, .field-row select, .field-row textarea { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; font-size: 13px; color: var(--ink); background: var(--paper); }
-  .field-row input:focus, .field-row select:focus, .field-row textarea:focus { outline: none; border-color: var(--primary); }
+  .field-row label { display: block; font-size: 12px; font-weight: 700; color: var(--primary-dark); margin-bottom: 5px; }
+  .field-row input, .field-row select, .field-row textarea {
+    width: 100%; border: 1.5px solid var(--line); border-radius: 9px;
+    padding: 9px 12px; font-size: 13px; color: var(--ink);
+    background: linear-gradient(135deg, #FBFAFF, #F4EFFF);
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .field-row input:focus, .field-row select:focus, .field-row textarea:focus {
+    outline: none; border-color: var(--primary); background: #fff;
+    box-shadow: 0 0 0 3px rgba(115, 80, 232, 0.18);
+  }
   .field-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .field-hint { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
   .field-error { font-size: 11.5px; color: var(--st-annule); margin-top: 4px; display: none; }
   .field-error.show { display: block; }
-  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-  .detect-banner { background: var(--primary-tint); color: var(--primary-dark); font-size: 12px; font-weight: 600; padding: 10px 13px; border-radius: 10px; margin-bottom: 14px; display: none; align-items: center; gap: 8px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .detect-banner { background: var(--grad-soft); color: var(--primary-dark); font-size: 12px; font-weight: 600; padding: 10px 13px; border-radius: 10px; margin-bottom: 14px; display: none; align-items: center; gap: 8px; }
   .detect-banner.show { display: flex; }
 
   .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; margin-bottom: 16px; }
-  .detail-item-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); margin-bottom: 3px; }
+  .detail-item-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--primary-dark); margin-bottom: 3px; }
   .detail-item-value { font-size: 13.5px; font-weight: 600; }
   .status-menu { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
   .status-menu button { border: 1.5px solid var(--line); background: var(--card); border-radius: 9px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; color: var(--ink-soft); }
-  .status-menu button.current { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-tint); }
-  .modal-tabs { display: flex; gap: 6px; margin-bottom: 16px; background: var(--paper); border-radius: 10px; padding: 3px; }
+  .status-menu button.current { border-color: var(--primary); color: var(--primary-dark); background: var(--grad-soft); }
+  .modal-tabs { display: flex; gap: 6px; margin-bottom: 16px; background: var(--grad-soft); border-radius: 10px; padding: 3px; }
   .modal-tabs button { flex: 1; border: none; background: none; padding: 8px; border-radius: 8px; font-size: 12px; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
-  .modal-tabs button.active { background: var(--card); color: var(--primary-dark); box-shadow: 0 1px 3px rgba(18,36,47,0.12); }
-  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--ink); color: #fff; font-size: 13px; font-weight: 600; padding: 12px 20px; border-radius: 10px; z-index: 200; opacity: 0; transition: opacity .25s ease, transform .25s ease; box-shadow: 0 20px 40px -14px rgba(0,0,0,.4); display: flex; align-items: center; gap: 8px; }
+  .modal-tabs button.active { background: var(--card); color: var(--primary-dark); box-shadow: 0 1px 3px rgba(115, 80, 232, 0.2); }
+  .toast {
+    position: fixed; bottom: 26px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--grad-primary-deep);
+    color: #fff; font-size: 13px; font-weight: 600; padding: 12px 20px;
+    border-radius: 10px; z-index: 200; opacity: 0;
+    transition: opacity .25s ease, transform .25s ease;
+    box-shadow: 0 20px 40px -14px rgba(115, 80, 232, 0.6);
+    display: flex; align-items: center; gap: 8px;
+    border-left: 4px solid #E9E3FF;
+  }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   @media (max-width: 720px) {
@@ -2026,7 +2202,6 @@ export default function AdminDashboard() {
     .field-2col { grid-template-columns: 1fr; }
     .detail-grid { grid-template-columns: 1fr; }
   }
-
       `}</style>
   <div className="app">
     
@@ -2099,7 +2274,7 @@ export default function AdminDashboard() {
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="collapseIcon"><polyline points="15 18 9 12 15 6"/></svg>
         <span className="nav-label">Réduire le menu</span>
       </button>
-      <button className="sb-collapse-btn" id="logoutBtn" style={{ marginTop: 6, color: '#D9483C' }}>
+      <button className="sb-collapse-btn" id="logoutBtn" style={{ marginTop: 6, color: '#FFD9D5', borderColor: 'rgba(255,217,213,0.35)' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         <span className="nav-label">Déconnexion</span>
       </button>
@@ -2118,7 +2293,7 @@ export default function AdminDashboard() {
             <span className="tb-icon-dot" id="tbNotifDot">0</span>
           </button>
           <div className="tb-user">
-            <div className="tb-avatar" style={{background: 'linear-gradient(135deg,#1B1730,#4A4460)'}}>{(account?.email || '?').slice(0, 2).toUpperCase()}</div>
+            <div className="tb-avatar">{(account?.email || '?').slice(0, 2).toUpperCase()}</div>
             <div className="tb-user-text"><div className="tb-user-name">{account?.email || '—'}</div><div className="tb-user-role">Administrateur</div></div>
           </div>
         </div>
