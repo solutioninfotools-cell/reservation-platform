@@ -6,19 +6,31 @@ import { TypeNotification } from '@prisma/client';
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(userId: string, type: TypeNotification, message: string) {
-    return this.prisma.notification.create({ data: { userId, type, message } });
+  /**
+   * Crée une notification pour `recipientId`.
+   * `senderId` est facultatif : une notification peut provenir du système
+   * (rappel, annulation automatique) et n'avoir aucun auteur.
+   */
+  async create(recipientId: string, type: TypeNotification, message: string, senderId?: string | null) {
+    return this.prisma.notification.create({
+      data: { recipientId, senderId: senderId ?? undefined, type, message },
+    });
   }
 
-  async listForUser(userId: string) {
-    return this.prisma.notification.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 50 });
+  async listForUser(recipientId: string) {
+    return this.prisma.notification.findMany({
+      where: { recipientId },
+      include: { sender: { select: { id: true, email: true, role: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
   }
 
-  async markAllRead(userId: string) {
-    return this.prisma.notification.updateMany({ where: { userId, lu: false }, data: { lu: true } });
+  async markAllRead(recipientId: string) {
+    return this.prisma.notification.updateMany({ where: { recipientId, lu: false }, data: { lu: true } });
   }
 
-  async unreadCount(userId: string) {
-    return this.prisma.notification.count({ where: { userId, lu: false } });
+  async unreadCount(recipientId: string) {
+    return this.prisma.notification.count({ where: { recipientId, lu: false } });
   }
 }

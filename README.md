@@ -63,7 +63,7 @@ reservation-platform/
 ├── backend/            # API NestJS (auth, appointments, admin, professionnel, receptionniste, public...)
 │   └── prisma/          # schema.prisma + migrations
 ├── frontend/           # App React (un dashboard par rôle)
-├── docs/
+├── docs/              # ARCHITECTURE.md + ADMIN.md (fonctionnalités et API de l'espace Admin)
 ├── .env.example
 └── docker-compose.yml
 ```

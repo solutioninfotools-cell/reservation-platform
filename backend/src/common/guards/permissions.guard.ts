@@ -47,6 +47,12 @@ export class PermissionsGuard implements CanActivate {
     if (!affectation) {
       throw new ForbiddenException("Vous n'êtes pas affectée à ce professionnel.");
     }
+    // Activation sur cet espace uniquement (CDC II.13.1) : le professionnel peut
+    // suspendre l'accès à son espace sans toucher au compte, qui reste valide
+    // pour les autres professionnels auxquels la réceptionniste est affectée.
+    if (!affectation.actif) {
+      throw new ForbiddenException('Votre accès à cet espace a été suspendu par le professionnel.');
+    }
 
     const hasAll = required.every((perm) => (affectation as any)[perm] === true);
     if (!hasAll) {

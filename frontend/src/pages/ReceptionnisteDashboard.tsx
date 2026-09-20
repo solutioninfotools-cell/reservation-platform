@@ -246,49 +246,67 @@ export default function ReceptionnisteDashboard() {
 
   /* =========================================================
      PAGE : AGENDA
+     Structure : colonnes par professionnel + rail latéral
      ========================================================= */
+  const AG_START = 8 * 60;    // première heure affichée (08:00)
+  const AG_END = 19 * 60;     // dernière ligne (18:00 → 19:00)
+  const AG_SLOT = 30;         // une ligne = 30 min
+  const AG_SLOT_H = 46;       // hauteur d'une ligne, en px
+  const AG_GUTTER = 64;       // largeur de la colonne des heures, en px
+  const AG_PX = AG_SLOT_H / AG_SLOT;
+  const AG_HEIGHT = ((AG_END - AG_START) / AG_SLOT) * AG_SLOT_H;
+  const LUNCH = { start: "13:00", end: "14:00", label: "Pause déjeuner" };
+  let nowTimer = null;
+
+  window.hmToMin = function hmToMin(hm) { const [h, m] = hm.split(":").map(Number); return h * 60 + m; }
+  window.minToHM = function minToHM(min) {
+    min = Math.max(0, Math.round(min));
+    return String(Math.floor(min / 60)).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0");
+  }
+  window.agTop = function agTop(min) { return (min - AG_START) * AG_PX; }
+
   window.renderAgenda = function renderAgenda() {
-    let html = `
+    const html = `
       <div class="page-head">
-        <div><h1 class="page-title">Agenda</h1><p class="page-sub">Visualisez tous les rendez-vous des professionnels affectés</p></div>
+        <div><h1 class="page-title">Agenda</h1><p class="page-sub">Gérez les rendez-vous des professionnels auxquels vous êtes affectée</p></div>
         <button class="btn btn-primary" onclick="openNewRdv()">${iconPlus()} Nouveau rendez-vous</button>
       </div>
+
       <div class="agenda-toolbar">
         <div class="date-nav">
-          <button onclick="agendaShift(-1)">${iconChevronLeft()}</button>
-          <span class="date-nav-label">${agendaDateLabel()}</span>
-          <button onclick="agendaShift(1)">${iconChevronRight()}</button>
+          <button onclick="agendaShift(-1)" title="Précédent">${iconChevronLeft()}</button>
+          <button class="date-nav-today" onclick="agendaToday()">Aujourd'hui</button>
+          <button onclick="agendaShift(1)" title="Suivant">${iconChevronRight()}</button>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="agendaToday()">Aujourd'hui</button>
-        <div class="view-toggle" style="margin-left:auto">
-          <button class="${state.agendaView==='day'?'active':''}" onclick="setAgendaView('day')">Vue jour</button>
-          <button class="${state.agendaView==='week'?'active':''}" onclick="setAgendaView('week')">Vue semaine</button>
-          <button class="${state.agendaView==='month'?'active':''}" onclick="setAgendaView('month')">Vue mois</button>
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="exportMock('Planning / Agenda')">${iconPrinter()} Exporter</button>
+        <span class="agenda-date-label">${agendaDateLabel()}</span>
+        <label class="date-picker" title="Choisir une date">
+          ${iconCal()}
+          <input type="date" value="${state.agendaDate}" onchange="jumpToDay(this.value)" />
+        </label>
+        <select class="ag-select" onchange="setAgendaView(this.value)">
+          <option value="day" ${state.agendaView === "day" ? "selected" : ""}>Vue jour</option>
+          <option value="week" ${state.agendaView === "week" ? "selected" : ""}>Vue semaine</option>
+          <option value="month" ${state.agendaView === "month" ? "selected" : ""}>Vue mois</option>
+        </select>
+        <select class="ag-select" onchange="setProFilter(this.value)">
+          <option value="all" ${state.proFilter === "all" ? "selected" : ""}>Tous les professionnels</option>
+          ${PROS.map((p) => `<option value="${p.id}" ${state.proFilter === p.id ? "selected" : ""}>${p.name}</option>`).join("")}
+        </select>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="exportMock('Planning / Agenda')">${iconPrinter()} Imprimer</button>
       </div>
-      <div class="pro-filter-row">
-        <div class="pro-chip ${state.proFilter==='all'?'active':''}" onclick="setProFilter('all')">
-          <div class="avatar-sm" style="background:var(--ink-soft)">TP</div>
-          <div><div class="pro-chip-name">Tous les professionnels</div></div>
-        </div>
-        ${PROS.map((p) => `
-          <div class="pro-chip ${state.proFilter===p.id?'active':''}" onclick="setProFilter('${p.id}')">
-            <div class="avatar-sm" style="background:${p.color}">${p.initials}</div>
-            <div><div class="pro-chip-name">${p.name}</div><div class="pro-chip-role">${p.role}</div></div>
-          </div>`).join("")}
-      </div>
+
       <div class="agenda-body">
-        <div id="agendaMain"></div>
-        <div>
-          ${miniCalHtml()}
-          <div class="card" style="margin-top:14px;padding:14px 16px;">
-            <div style="font-size:12px;font-weight:700;margin-bottom:10px;">Légende des statuts</div>
-            <div class="legend-row">
-              ${Object.entries(STATUS).map(([k,v]) => `<span class="legend-item"><span class="legend-dot" style="background:${v.color}"></span>${v.label}</span>`).join("")}
-            </div>
+        <div class="agenda-main">
+          <div id="agendaMain"></div>
+          <div class="agenda-legend">
+            ${Object.entries(STATUS).map(([k, v]) => `<span class="legend-item"><span class="legend-dot" style="background:${v.color}"></span>${v.label}</span>`).join("")}
           </div>
         </div>
+        <aside class="agenda-rail">
+          ${miniCalHtml()}
+          ${agendaStatusPanel()}
+          ${agendaRemindersPanel()}
+        </aside>
       </div>
     `;
     document.getElementById("page-agenda").innerHTML = html;
@@ -319,21 +337,31 @@ export default function ReceptionnisteDashboard() {
       const d = new Date(state.monthCursor + "-01T00:00:00");
       d.setMonth(d.getMonth() + dir);
       state.monthCursor = d.toISOString().slice(0, 7);
+      renderAgenda();
+      return;
     }
+    state.monthCursor = state.agendaDate.slice(0, 7);
     renderAgenda();
   }
-  window.agendaToday = function agendaToday() { state.agendaDate = TODAY; state.monthCursor = TODAY.slice(0,7); renderAgenda(); }
+  window.agendaToday = function agendaToday() { state.agendaDate = TODAY; state.monthCursor = TODAY.slice(0, 7); renderAgenda(); }
   window.setAgendaView = function setAgendaView(v) { state.agendaView = v; renderAgenda(); }
   window.setProFilter = function setProFilter(id) { state.proFilter = id; renderAgenda(); }
 
   window.visiblePros = function visiblePros() { return state.proFilter === "all" ? PROS : PROS.filter((p) => p.id === state.proFilter); }
+  window.dayAppts = function dayAppts(proId) {
+    return APPTS
+      .filter((a) => a.date === state.agendaDate && a.proId === proId && a.status !== "annule")
+      .sort((a, b) => a.start.localeCompare(b.start));
+  }
 
   window.renderAgendaMain = function renderAgendaMain() {
     const el = document.getElementById("agendaMain");
+    clearInterval(nowTimer);
     if (state.agendaView === "day") {
       el.innerHTML = dayViewHtml();
-      placeDayAppts();
       wireDayDnD();
+      updateNowLine();
+      nowTimer = setInterval(updateNowLine, 60000);
     } else if (state.agendaView === "week") {
       el.innerHTML = weekViewHtml();
     } else {
@@ -341,95 +369,214 @@ export default function ReceptionnisteDashboard() {
     }
   }
 
-  const HOURS = Array.from({length: 11}, (_, i) => 8 + i); // 8..18
-
+  /* ---------- Vue jour : une colonne par professionnel ---------- */
   window.dayViewHtml = function dayViewHtml() {
     const pros = visiblePros();
-    const cols = pros.length || 1;
-    let head = `<div class="day-grid-head" style="grid-template-columns:44px repeat(${cols},1fr)"><div></div>` +
-      pros.map((p) => `<div class="day-col-head"><div class="avatar-sm" style="background:${p.color};margin:0 auto 4px;">${p.initials}</div><div class="day-col-head-name">${p.name}</div><div class="day-col-head-role">${p.role}</div></div>`).join("") + `</div>`;
-    let body = `<div class="day-grid-body" style="grid-template-columns:44px repeat(${cols},1fr)">`;
-    HOURS.forEach((h) => {
-      body += `<div class="hour-label">${h}:00</div>`;
-      pros.forEach((p) => {
-        body += `<div class="day-col" data-pro="${p.id}" data-hour="${h}" style="grid-row: span 1;" onclick="handleDayColClick(event,'${p.id}',${h})"></div>`;
-      });
-    });
-    body += `</div>`;
-    return `<div class="day-grid">${head}${body}</div>`;
+    const cols = `${AG_GUTTER}px repeat(${pros.length}, minmax(0, 1fr)) 104px`;
+    const hours = [];
+    for (let m = AG_START; m < AG_END; m += 60) hours.push(m);
+
+    const head = `
+      <div class="day-grid-head" style="grid-template-columns:${cols}">
+        <div class="day-head-corner"></div>
+        ${pros.map((p) => `
+          <div class="day-col-head" onclick="setProFilter('${state.proFilter === p.id ? "all" : p.id}')" title="Filtrer sur ce professionnel">
+            <div class="avatar-sm" style="background:${p.color}">${p.initials}</div>
+            <div class="day-col-head-txt">
+              <div class="day-col-head-name">${p.name}</div>
+              <div class="day-col-head-role">${p.role}</div>
+            </div>
+            <span class="day-col-head-dot" style="background:${p.color}"></span>
+          </div>`).join("")}
+        <button class="day-col-add" onclick="goToPage('pros')">${iconPlus()} Ajouter pro</button>
+      </div>`;
+
+    const gutter = `
+      <div class="time-gutter" style="height:${AG_HEIGHT}px">
+        ${hours.map((m) => `<span class="hour-label" style="top:${agTop(m)}px">${minToHM(m)}</span>`).join("")}
+      </div>`;
+
+    const lunchTop = agTop(hmToMin(LUNCH.start));
+    const lunchH = (hmToMin(LUNCH.end) - hmToMin(LUNCH.start)) * AG_PX;
+    const columns = pros.map((p) => `
+      <div class="day-col" data-pro="${p.id}" style="height:${AG_HEIGHT}px" onclick="handleDayColClick(event,'${p.id}')">
+        <div class="lunch-band" style="top:${lunchTop}px;height:${lunchH}px">${LUNCH.label}</div>
+        ${layoutLanes(dayAppts(p.id)).map((x) => apptBlockHtml(x.appt, x.lane, x.lanes)).join("")}
+      </div>`).join("");
+
+    const body = `
+      <div class="day-grid-body" style="grid-template-columns:${cols}">
+        ${gutter}
+        ${columns}
+        <div class="day-col day-col-ghost" style="height:${AG_HEIGHT}px"></div>
+        <div class="now-line" id="agendaNowLine" style="display:none;left:${AG_GUTTER}px"><span class="now-badge"></span></div>
+      </div>`;
+
+    // en-tête et corps dans le même conteneur scrollable : les colonnes restent alignées
+    return `<div class="day-grid"><div class="day-grid-scroll">${head}${body}</div></div>`;
   }
 
-  window.placeDayAppts = function placeDayAppts() {
-    const pros = visiblePros();
-    const grid = document.querySelector(".day-grid-body");
-    if (!grid) return;
-    const rowH = grid.querySelector(".day-col") ? grid.querySelector(".day-col").offsetHeight : 46;
-    const dayAppts = APPTS.filter((a) => a.date === state.agendaDate && (state.proFilter === "all" || a.proId === state.proFilter) && a.status !== "annule");
-    dayAppts.forEach((a) => {
-      const colIndex = pros.findIndex((p) => p.id === a.proId);
-      if (colIndex === -1) return;
-      const col = grid.querySelectorAll(`.day-col[data-pro="${a.proId}"]`)[0];
-      if (!col) return;
-      const [sh, sm] = a.start.split(":").map(Number);
-      const [eh, em] = a.end.split(":").map(Number);
-      const startMin = (sh - HOURS[0]) * 60 + sm;
-      const durMin = Math.max(20, (eh * 60 + em) - (sh * 60 + sm));
-      const top = (startMin / 60) * rowH;
-      const height = (durMin / 60) * rowH - 4;
-      const block = document.createElement("div");
-      block.className = "appt-block";
-      block.style.top = top + "px";
-      block.style.height = Math.max(24, height) + "px";
-      block.style.background = STATUS[a.status].color + "22";
-      block.style.borderLeftColor = STATUS[a.status].color;
-      block.style.color = "#1B1730";
-      block.draggable = true;
-      block.dataset.id = a.id;
-      block.innerHTML = `<b>${a.client}</b><span>${a.start} · ${a.service}</span>`;
-      block.onclick = (e) => { e.stopPropagation(); openRdvDetail(a.id); };
-      block.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", a.id); block.classList.add("appt-dragging"); });
-      block.addEventListener("dragend", () => block.classList.remove("appt-dragging"));
-      col.style.position = "relative";
-      col.appendChild(block);
+  // Répartit les rendez-vous qui se chevauchent en couloirs côte à côte
+  window.layoutLanes = function layoutLanes(appts) {
+    const out = [];
+    let cluster = [];
+    let clusterEnd = -1;
+    const flush = () => {
+      if (!cluster.length) return;
+      const laneEnds = [];
+      const first = out.length;
+      cluster.forEach((a) => {
+        const s = hmToMin(a.start), e = hmToMin(a.end);
+        let lane = laneEnds.findIndex((end) => end <= s);
+        if (lane === -1) { lane = laneEnds.length; laneEnds.push(e); } else laneEnds[lane] = e;
+        out.push({ appt: a, lane, lanes: 0 });
+      });
+      for (let i = first; i < out.length; i++) out[i].lanes = laneEnds.length;
+      cluster = []; clusterEnd = -1;
+    };
+    appts.forEach((a) => {
+      const s = hmToMin(a.start);
+      if (cluster.length && s >= clusterEnd) flush();
+      cluster.push(a);
+      clusterEnd = Math.max(clusterEnd, hmToMin(a.end));
     });
+    flush();
+    return out;
   }
-  window.handleDayColClick = function handleDayColClick(e, proId, hour) {
+
+  window.statusIcon = function statusIcon(status) {
+    if (status === "termine") return iconCheckCircle();
+    if (status === "arrive") return iconCheck();
+    if (status === "encours") return iconClock();
+    if (status === "absent") return iconUserX();
+    if (status === "annule") return iconX();
+    return iconCal();
+  }
+
+  window.apptBlockHtml = function apptBlockHtml(a, lane, lanes) {
+    const s = hmToMin(a.start), e = hmToMin(a.end);
+    const top = agTop(s);
+    const height = Math.max(26, (e - s) * AG_PX - 4);
+    const width = 100 / (lanes || 1);
+    const color = STATUS[a.status].color;
+    const compact = height < 74 ? " is-compact" : "";
+    return `
+      <div class="appt-block${compact}" draggable="true" data-id="${a.id}"
+           style="top:${top}px;height:${height}px;left:calc(${lane * width}% + 4px);width:calc(${width}% - 8px);background:${color}18;border-left-color:${color}"
+           onclick="event.stopPropagation();openRdvDetail('${a.id}')"
+           title="${a.client} · ${a.start} – ${a.end} · ${a.service}">
+        <span class="appt-status" style="color:${color}">${statusIcon(a.status)}</span>
+        <div class="appt-time">${a.start} – ${a.end}</div>
+        <div class="appt-client">${a.client}</div>
+        <div class="appt-phone">${a.phone}</div>
+        <div class="appt-service">${a.service}</div>
+      </div>`;
+  }
+
+  window.handleDayColClick = function handleDayColClick(e, proId) {
     if (e.target.closest(".appt-block")) return;
-    openNewRdv({ proId, date: state.agendaDate, start: hour + ":00" });
+    const rect = e.currentTarget.getBoundingClientRect();
+    const min = AG_START + Math.floor((e.clientY - rect.top) / AG_PX / 15) * 15;
+    openNewRdv({ proId, date: state.agendaDate, start: minToHM(Math.min(min, AG_END - 30)) });
   }
+
   window.wireDayDnD = function wireDayDnD() {
-    document.querySelectorAll(".day-col").forEach((col) => {
+    document.querySelectorAll(".appt-block").forEach((block) => {
+      block.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", block.dataset.id);
+        e.dataTransfer.effectAllowed = "move";
+        block.classList.add("appt-dragging");
+      });
+      block.addEventListener("dragend", () => block.classList.remove("appt-dragging"));
+    });
+    document.querySelectorAll(".day-col[data-pro]").forEach((col) => {
       col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("drop-hover"); });
       col.addEventListener("dragleave", () => col.classList.remove("drop-hover"));
       col.addEventListener("drop", (e) => {
-        e.preventDefault(); col.classList.remove("drop-hover");
-        const id = e.dataTransfer.getData("text/plain");
-        const appt = APPTS.find((a) => a.id === id);
+        e.preventDefault();
+        col.classList.remove("drop-hover");
+        const appt = APPTS.find((a) => a.id === e.dataTransfer.getData("text/plain"));
         if (!appt) return;
-        const newHour = parseInt(col.dataset.hour, 10);
-        const newPro = col.dataset.pro;
-        const [, sm] = appt.start.split(":").map(Number);
-        const durMin = (function(){ const [sh,smm]=appt.start.split(":").map(Number); const [eh,em]=appt.end.split(":").map(Number); return (eh*60+em)-(sh*60+smm); })();
-        const newStart = String(newHour).padStart(2,"0") + ":" + String(sm).padStart(2,"0");
-        const endTotal = newHour*60+sm+durMin;
-        const newEnd = String(Math.floor(endTotal/60)).padStart(2,"0") + ":" + String(endTotal%60).padStart(2,"0");
-        appt.proId = newPro; appt.start = newStart; appt.end = newEnd;
-        showToast(`Rendez-vous de <b>${appt.client}</b> déplacé à ${newStart}`);
-        renderAgendaMain();
-        addNotif("edit", `<b>${appt.client}</b> déplacé au ${newStart} avec ${proById(newPro).name}`);
+        const rect = col.getBoundingClientRect();
+        const dur = hmToMin(appt.end) - hmToMin(appt.start);
+        let start = AG_START + Math.round((e.clientY - rect.top) / AG_PX / 15) * 15;
+        start = Math.min(Math.max(start, AG_START), AG_END - dur);
+        appt.proId = col.dataset.pro;
+        appt.start = minToHM(start);
+        appt.end = minToHM(start + dur);
+        showToast(`Rendez-vous de <b>${appt.client}</b> déplacé à ${appt.start}`);
+        addNotif("edit", `<b>${appt.client}</b> déplacé au ${appt.start} avec ${proById(appt.proId).name}`);
+        renderAgenda();
       });
     });
   }
 
+  window.updateNowLine = function updateNowLine() {
+    const line = document.getElementById("agendaNowLine");
+    if (!line) return;
+    const min = hmToMin(nowHM());
+    const visible = state.agendaDate === TODAY && min >= AG_START && min <= AG_END;
+    line.style.display = visible ? "block" : "none";
+    if (!visible) return;
+    line.style.top = agTop(min) + "px";
+    line.querySelector(".now-badge").textContent = nowHM();
+  }
+
+  /* ---------- Rail latéral ---------- */
+  window.agendaStatusPanel = function agendaStatusPanel() {
+    const day = APPTS.filter((a) => a.date === state.agendaDate && (state.proFilter === "all" || a.proId === state.proFilter));
+    return `
+      <div class="rail-card">
+        <div class="rail-head"><h4>Statut des rendez-vous</h4></div>
+        <div class="rail-body">
+          ${Object.entries(STATUS).map(([k, v]) => `
+            <div class="rail-status-row">
+              <span class="rail-status-icon" style="background:${v.color}1A;color:${v.color}">${statusIcon(k)}</span>
+              <span class="rail-status-label">${v.label}</span>
+              <span class="rail-status-count">${day.filter((a) => a.status === k).length}</span>
+            </div>`).join("")}
+        </div>
+        <button class="rail-link" onclick="goToPage('rdv')">Voir le rapport détaillé ${iconChevronRight()}</button>
+      </div>`;
+  }
+
+  window.agendaReminders = function agendaReminders() {
+    const ref = state.agendaDate === TODAY ? nowHM() : "00:00";
+    return APPTS
+      .filter((a) => a.date === state.agendaDate && ["reserve", "arrive"].includes(a.status) && a.start >= ref && (state.proFilter === "all" || a.proId === state.proFilter))
+      .sort((a, b) => a.start.localeCompare(b.start));
+  }
+
+  window.agendaRemindersPanel = function agendaRemindersPanel() {
+    const list = agendaReminders();
+    return `
+      <div class="rail-card">
+        <div class="rail-head"><h4>Rappels à venir</h4><span class="rail-badge">${list.length}</span></div>
+        <div class="rail-body">
+          ${list.length ? list.slice(0, 4).map((a) => `
+            <div class="rail-rdv-row" onclick="openRdvDetail('${a.id}')">
+              <div class="avatar-sm" style="background:${proById(a.proId).color}">${initials(a.client)}</div>
+              <div class="rail-rdv-txt">
+                <div class="rail-rdv-name">${a.client}</div>
+                <div class="rail-rdv-sub">${a.start} · ${a.service}</div>
+              </div>
+              ${iconChevronRight()}
+            </div>`).join("") : `<div class="rail-empty">Aucun rappel pour cette journée</div>`}
+        </div>
+        <button class="rail-link" onclick="goToPage('rdv')">Voir tous les rappels ${iconChevronRight()}</button>
+      </div>`;
+  }
+
+  /* ---------- Vues semaine / mois ---------- */
   window.weekViewHtml = function weekViewHtml() {
     const start = weekStart(state.agendaDate);
     const days = Array.from({length:7}, (_, i) => isoPlusDays(start, i));
     return `<div class="week-grid">` + days.map((d) => {
-      const dayAppts = APPTS.filter((a) => a.date === d && (state.proFilter==='all'||a.proId===state.proFilter) && a.status!=='annule').sort((a,b)=>a.start.localeCompare(b.start));
+      const appts = APPTS.filter((a) => a.date === d && (state.proFilter==='all'||a.proId===state.proFilter) && a.status!=='annule').sort((a,b)=>a.start.localeCompare(b.start));
       const dow = new Date(d+"T00:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric"});
       return `<div class="week-day-col">
         <div class="week-day-head ${d===TODAY?'today':''}">${capitalize(dow)}</div>
-        ${dayAppts.length ? dayAppts.map((a) => `<div class="week-appt-chip" style="background:${STATUS[a.status].color}18;border-color:${STATUS[a.status].color}" onclick="openRdvDetail('${a.id}')"><b>${a.start}</b> ${a.client}</div>`).join("") : `<div style="font-size:10.5px;color:var(--ink-soft);text-align:center;padding-top:10px;">—</div>`}
+        ${appts.length ? appts.map((a) => `<div class="week-appt-chip" style="background:${STATUS[a.status].color}18;border-color:${STATUS[a.status].color}" onclick="openRdvDetail('${a.id}')"><b>${a.start}</b> ${a.client}</div>`).join("") : `<div style="font-size:10.5px;color:var(--ink-soft);text-align:center;padding-top:10px;">—</div>`}
       </div>`;
     }).join("") + `</div>`;
   }
@@ -453,14 +600,19 @@ export default function ReceptionnisteDashboard() {
     html += `</div>`;
     return html;
   }
-  window.jumpToDay = function jumpToDay(iso) { state.agendaDate = iso; state.agendaView = "day"; renderAgenda(); }
+  window.jumpToDay = function jumpToDay(iso) {
+    state.agendaDate = iso;
+    state.monthCursor = iso.slice(0, 7);
+    state.agendaView = "day";
+    renderAgenda();
+  }
 
   window.miniCalHtml = function miniCalHtml() {
     const first = new Date(state.monthCursor + "-01T00:00:00");
     const startOffset = (first.getDay() + 6) % 7;
     const gridStart = new Date(first); gridStart.setDate(first.getDate() - startOffset);
     const cells = Array.from({length: 42}, (_, i) => { const d = new Date(gridStart); d.setDate(gridStart.getDate()+i); return d.toISOString().slice(0,10); });
-    const dows = ["L","M","M","J","V","S","D"];
+    const dows = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
     let html = `<div class="mini-cal"><div class="mini-cal-head">
       <button onclick="miniCalShift(-1)">${iconChevronLeft()}</button>
       <span>${capitalize(first.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}))}</span>
@@ -927,6 +1079,7 @@ export default function ReceptionnisteDashboard() {
 
     return () => {
       ac.abort();
+      clearInterval(nowTimer);
 
       delete (window as any).todayISO;
       delete (window as any).isoPlusDays;
@@ -953,7 +1106,17 @@ export default function ReceptionnisteDashboard() {
       delete (window as any).visiblePros;
       delete (window as any).renderAgendaMain;
       delete (window as any).dayViewHtml;
-      delete (window as any).placeDayAppts;
+      delete (window as any).hmToMin;
+      delete (window as any).minToHM;
+      delete (window as any).agTop;
+      delete (window as any).dayAppts;
+      delete (window as any).layoutLanes;
+      delete (window as any).statusIcon;
+      delete (window as any).apptBlockHtml;
+      delete (window as any).updateNowLine;
+      delete (window as any).agendaStatusPanel;
+      delete (window as any).agendaReminders;
+      delete (window as any).agendaRemindersPanel;
       delete (window as any).handleDayColClick;
       delete (window as any).wireDayDnD;
       delete (window as any).weekViewHtml;
@@ -1140,65 +1303,119 @@ export default function ReceptionnisteDashboard() {
   .dash-list-name { font-weight: 700; flex: 1; }
   .dash-list-sub { font-size: 11.5px; color: var(--ink-soft); }
 
-  /* ---------- Agenda ---------- */
+  /* ---------- Agenda : barre d'outils ---------- */
   .agenda-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-  .view-toggle { display: flex; background: var(--paper); border-radius: 10px; padding: 3px; gap: 2px; }
-  .view-toggle button { border: none; background: none; padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
-  .view-toggle button.active { background: var(--card); color: var(--primary-dark); box-shadow: 0 1px 3px rgba(18,36,47,0.12); }
-  .date-nav { display: flex; align-items: center; gap: 6px; }
-  .date-nav button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); }
-  .date-nav-label { font-size: 13.5px; font-weight: 700; padding: 0 4px; min-width: 150px; text-align: center; }
+  .date-nav { display: flex; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .date-nav button { height: 34px; border: none; background: var(--card); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); padding: 0 10px; }
+  .date-nav button:hover { background: var(--paper); color: var(--ink); }
+  .date-nav-today { font-size: 12.5px; font-weight: 700; color: var(--ink) !important; border-left: 1px solid var(--line) !important; border-right: 1px solid var(--line) !important; }
+  .agenda-date-label { font-size: 14.5px; font-weight: 800; padding: 0 2px; }
+  .date-picker { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink-soft); cursor: pointer; }
+  .date-picker input { border: none; background: none; font-size: 12.5px; color: var(--ink); outline: none; width: 118px; cursor: pointer; }
+  .ag-select { height: 34px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-size: 12.5px; font-weight: 600; padding: 0 10px; cursor: pointer; outline: none; }
+  .ag-select:focus { border-color: var(--primary); }
 
-  .pro-filter-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 18px; }
-  .pro-chip { display: flex; align-items: center; gap: 9px; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 14px 8px 8px; cursor: pointer; flex-shrink: 0; transition: border-color .15s ease, background .15s ease; }
-  .pro-chip.active { border-color: var(--primary); background: var(--primary-tint); }
-  .pro-chip-name { font-size: 12.5px; font-weight: 700; line-height: 1.3; }
-  .pro-chip-role { font-size: 10.5px; color: var(--ink-soft); }
-  .pro-chip-dot { width: 8px; height: 8px; border-radius: 50%; margin-left: 4px; }
+  /* ---------- Agenda : mise en page ---------- */
+  .agenda-body { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 18px; align-items: start; }
+  @media (max-width: 1200px) { .agenda-body { grid-template-columns: minmax(0, 1fr); } }
+  .agenda-main { min-width: 0; }
+  .agenda-rail { display: flex; flex-direction: column; gap: 14px; }
 
-  .agenda-body { display: grid; grid-template-columns: 1fr 300px; gap: 18px; align-items: start; }
-  @media (max-width: 1100px) { .agenda-body { grid-template-columns: 1fr; } }
-
+  /* ---------- Agenda : grille jour ---------- */
   .day-grid { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-  .day-grid-head { display: grid; border-bottom: 1px solid var(--line); }
-  .day-col-head { padding: 12px 10px; text-align: center; border-left: 1px solid var(--line); }
-  .day-col-head:first-child { border-left: none; }
-  .day-col-head-name { font-size: 12.5px; font-weight: 700; }
-  .day-col-head-role { font-size: 10.5px; color: var(--ink-soft); }
-  .day-grid-body { display: grid; position: relative; }
-  .day-hour-row { display: contents; }
-  .hour-label { font-size: 10.5px; color: var(--ink-soft); padding: 2px 8px 0 0; text-align: right; border-top: 1px solid var(--line); position: relative; top: -6px; }
-  .day-col { border-left: 1px solid var(--line); border-top: 1px solid var(--line); min-height: 46px; position: relative; cursor: pointer; }
-  .day-col:hover { background: var(--paper); }
-  .appt-block {
-    position: absolute; left: 4px; right: 4px; border-radius: 8px; padding: 5px 7px; overflow: hidden;
-    font-size: 11px; cursor: pointer; border-left: 3px solid; box-shadow: 0 2px 6px rgba(18,36,47,0.08);
-    transition: transform .1s ease, box-shadow .1s ease; z-index: 2;
-  }
-  .appt-block:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(18,36,47,0.18); z-index: 3; }
-  .appt-block b { display: block; font-size: 11.5px; line-height: 1.3; }
-  .appt-block span { display: block; opacity: .85; font-size: 10px; }
-  .appt-dragging { opacity: .5; }
-  .day-col.drop-hover { background: var(--primary-tint); }
+  .day-grid-head { display: grid; border-bottom: 1px solid var(--line); background: var(--card); position: sticky; top: 0; z-index: 6; }
+  .day-head-corner { border-right: 1px solid var(--line); }
+  .day-col-head { display: flex; align-items: center; gap: 9px; padding: 11px 12px; border-right: 1px solid var(--line); cursor: pointer; position: relative; min-width: 0; }
+  .day-col-head:hover { background: var(--paper); }
+  .day-col-head-txt { min-width: 0; }
+  .day-col-head-name { font-size: 12.5px; font-weight: 700; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .day-col-head-role { font-size: 10.5px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .day-col-head-dot { width: 7px; height: 7px; border-radius: 50%; margin-left: auto; flex-shrink: 0; }
+  .day-col-add { display: flex; align-items: center; justify-content: center; gap: 5px; margin: 8px; border: 1.5px dashed var(--line); border-radius: 10px; background: none; color: var(--ink-soft); font-size: 11.5px; font-weight: 700; cursor: pointer; }
+  .day-col-add:hover { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-tint); }
 
-  .mini-cal { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
-  .mini-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; font-weight: 700; }
-  .mini-cal-head button { border: none; background: var(--paper); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; color: var(--ink-soft); }
-  .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; }
-  .mini-cal-dow { font-size: 10px; font-weight: 700; color: var(--ink-soft); padding-bottom: 4px; }
-  .mini-cal-day { font-size: 11.5px; padding: 6px 0; border-radius: 7px; cursor: pointer; color: var(--ink); }
+  .day-grid-scroll { max-height: 620px; overflow-y: auto; }
+  .day-grid-body { display: grid; position: relative; }
+  .time-gutter { position: relative; border-right: 1px solid var(--line); background: var(--card); }
+  .hour-label { position: absolute; right: 8px; margin-top: 3px; font-size: 10.5px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
+
+  /* trait plein à chaque heure (92px), trait clair à chaque demi-heure (46px) */
+  .day-col {
+    position: relative; border-right: 1px solid var(--line); cursor: pointer; min-width: 0;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      var(--line) 0 1px, transparent 1px 46px, #F0EEF7 46px 47px, transparent 47px 92px);
+  }
+  .day-col:hover { background-color: #FCFBFF; }
+  .day-col.drop-hover { background-color: var(--primary-tint); }
+  .day-col-ghost { cursor: default; background-image: none; background: var(--paper); border-right: none; }
+
+  .lunch-band {
+    position: absolute; left: 0; right: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 10.5px; font-weight: 700; color: var(--ink-soft); letter-spacing: .02em;
+    background: repeating-linear-gradient(45deg, #F1EFF7 0 6px, #E9E6F2 6px 12px);
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); z-index: 1;
+  }
+
+  .appt-block {
+    position: absolute; border-radius: 9px; padding: 6px 8px; overflow: hidden; cursor: pointer;
+    border-left: 3px solid; box-shadow: 0 1px 3px rgba(18,36,47,.08); z-index: 2;
+    transition: transform .1s ease, box-shadow .1s ease;
+  }
+  .appt-block:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(18,36,47,.16); z-index: 4; }
+  .appt-status { position: absolute; top: 5px; right: 6px; display: flex; }
+  .appt-status svg { width: 13px; height: 13px; }
+  .appt-time { font-size: 10px; font-weight: 700; color: var(--ink-soft); padding-right: 16px; }
+  .appt-client { font-size: 11.5px; font-weight: 700; color: var(--ink); line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .appt-phone { font-size: 10px; color: var(--ink-soft); }
+  .appt-service { font-size: 10px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .appt-block.is-compact .appt-phone, .appt-block.is-compact .appt-service { display: none; }
+  .appt-dragging { opacity: .45; }
+
+  .now-line { position: absolute; right: 0; height: 0; border-top: 2px solid var(--st-annule); z-index: 5; pointer-events: none; }
+  .now-line::after { content: ""; position: absolute; left: -3px; top: -4px; width: 7px; height: 7px; border-radius: 50%; background: var(--st-annule); }
+  .now-badge { position: absolute; right: 100%; margin-right: 6px; top: -9px; background: var(--st-annule); color: #fff; font-size: 9.5px; font-weight: 800; border-radius: 5px; padding: 2px 5px; }
+
+  .agenda-legend { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 11px 16px; margin-top: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--ink-soft); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ---------- Agenda : rail latéral ---------- */
+  .mini-cal { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .mini-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 700; }
+  .mini-cal-head button { border: none; background: var(--paper); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; }
+  .mini-cal-head button:hover { background: var(--primary-tint); color: var(--primary-dark); }
+  .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+  .mini-cal-dow { font-size: 9.5px; font-weight: 700; color: var(--ink-soft); padding-bottom: 5px; text-transform: uppercase; }
+  .mini-cal-day { font-size: 11.5px; padding: 6px 0; border-radius: 8px; cursor: pointer; color: var(--ink); }
   .mini-cal-day:hover { background: var(--paper); }
   .mini-cal-day.muted { color: #C7C2D6; }
   .mini-cal-day.today { border: 1.5px solid var(--primary); font-weight: 700; }
-  .mini-cal-day.selected { background: var(--primary); color: #fff; font-weight: 700; }
+  .mini-cal-day.selected { background: var(--primary); color: #fff; font-weight: 700; border-color: var(--primary); }
   .mini-cal-day.has-appt::after { content: ""; display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--primary); margin: 2px auto 0; }
   .mini-cal-day.selected.has-appt::after { background: #fff; }
 
-  .legend-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-soft); }
-  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .rail-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .rail-head { display: flex; align-items: center; gap: 8px; padding: 13px 16px 0; }
+  .rail-head h4 { margin: 0; font-size: 13px; font-weight: 800; }
+  .rail-badge { margin-left: auto; background: var(--primary-tint); color: var(--primary-dark); font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+  .rail-body { padding: 8px 8px 4px; }
+  .rail-status-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 9px; }
+  .rail-status-row:hover { background: var(--paper); }
+  .rail-status-icon { width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .rail-status-icon svg { width: 14px; height: 14px; }
+  .rail-status-label { font-size: 12px; font-weight: 600; }
+  .rail-status-count { margin-left: auto; font-size: 12.5px; font-weight: 800; }
+  .rail-rdv-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 10px; cursor: pointer; color: var(--ink-soft); }
+  .rail-rdv-row:hover { background: var(--paper); }
+  .rail-rdv-txt { min-width: 0; flex: 1; }
+  .rail-rdv-name { font-size: 12px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rail-rdv-sub { font-size: 10.5px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rail-empty { padding: 16px 8px; text-align: center; font-size: 11.5px; color: var(--ink-soft); }
+  .rail-link { width: 100%; display: flex; align-items: center; justify-content: center; gap: 5px; border: none; border-top: 1px solid var(--line); background: none; padding: 11px; font-size: 11.5px; font-weight: 700; color: var(--primary-dark); cursor: pointer; }
+  .rail-link:hover { background: var(--primary-tint); }
 
-  /* week/month simplified views */
+  /* ---------- Agenda : vues semaine / mois ---------- */
   .week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
   .week-day-col { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 220px; }
   .week-day-head { font-size: 11.5px; font-weight: 700; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); text-align: center; }
