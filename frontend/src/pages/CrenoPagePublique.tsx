@@ -1,6 +1,7 @@
-// @ts-nocheck -- fichier porté depuis un script JS existant (voir note en fin de réponse)
+// @ts-nocheck -- vue portée depuis un script JS existant, branchée sur l'API publique réelle (/api/public)
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { publicApi, assistantApi } from '../api/public.api';
 
 export default function CrenoPagePublique() {
   const navigate = useNavigate();
@@ -14,96 +15,181 @@ export default function CrenoPagePublique() {
     (window as any).__timeouts = __timeouts;
     (window as any).__observers = __observers;
 
-    // ---- begin ported script (identique à la version HTML d'origine) ----
-    const SERVICES = [
-      {
-        name: "Consultation cardiologie",
-        duration: "30 min",
-        price: "3 000 DA",
-        note: "Première visite ou suivi",
-        image: "https://images.unsplash.com/photo-1758691463384-771db2f192b3?fm=jpg&q=80&w=800&auto=format&fit=crop",
-      },
-      {
-        name: "Échographie cardiaque",
-        duration: "45 min",
-        price: "5 500 DA",
-        note: "Sur ordonnance",
-        image: "https://images.unsplash.com/photo-1758691462268-fbe66c4f3e28?fm=jpg&q=80&w=800&auto=format&fit=crop",
-      },
-      {
-        name: "Électrocardiogramme (ECG)",
-        duration: "15 min",
-        price: "1 500 DA",
-        note: "Sans rendez-vous préalable requis",
-        image: "https://images.unsplash.com/photo-1682706841281-f723c5bfcd83?fm=jpg&q=80&w=800&auto=format&fit=crop",
-      },
-      {
-        name: "Contrôle post-opératoire",
-        duration: "20 min",
-        price: "2 000 DA",
-        note: "Réservé aux patients suivis",
-        image: "https://images.unsplash.com/photo-1507537362848-9c7e70b7b5c1?fm=jpg&q=80&w=800&auto=format&fit=crop",
-      },
-    ];
+    /* =========================================================
+       DONNÉES — l'espace, les professionnels, les services et les
+       créneaux proviennent tous de l'API publique. Aucune donnée
+       n'est simulée : ce qui n'est pas configuré n'est pas affiché.
+       ========================================================= */
+    let ESPACE = null;
+    let PROS = [];
+    let SERVICES = [];
+    let SELECTED_PRO = null;
 
-    const HOURS = [
-      { day: "Dimanche", hours: "08:00 – 16:00" },
-      { day: "Lundi", hours: "08:00 – 16:00" },
-      { day: "Mardi", hours: "08:00 – 16:00" },
-      { day: "Mercredi", hours: "08:00 – 16:00" },
-      { day: "Jeudi", hours: "08:00 – 13:00" },
-      { day: "Vendredi", hours: "Fermé" },
-      { day: "Samedi", hours: "08:00 – 16:00" },
-    ];
+    const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 
-    const grid = document.getElementById("services-grid");
-    SERVICES.forEach((s, i) => {
-      const card = document.createElement("div");
-      card.className = "service-card reveal";
-      card.style.transitionDelay = (i * 0.08) + "s";
-      card.innerHTML = `
-        <div class="service-image-wrap">
-          <img class="service-image" src="${s.image}" alt="${s.name}" loading="lazy" />
-          <span class="service-image-badge">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            ${s.duration}
-          </span>
-        </div>
-        <div class="service-body">
-          <div class="service-top">
-            <div>
-              <p class="service-name">${s.name}</p>
-              <p class="service-note">${s.note}</p>
-            </div>
-            <div class="service-price">${s.price}</div>
-          </div>
-          <div class="service-bottom">
-            <span class="service-duration">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              ${s.duration}
-            </span>
-            <button class="service-cta" onclick="openBooking(${i})">Réserver
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-          </div>
-        </div>`;
-      grid.appendChild(card);
-    });
+    window.esc = function esc(value) {
+      if (value === null || value === undefined) return "";
+      return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+    window.fmtPrix = function fmtPrix(centimes) {
+      return centimes === null || centimes === undefined ? null : (centimes / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " DA";
+    }
+    window.fmtDateLong = function fmtDateLong(date) {
+      return date.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+    }
+    window.toDateInput = function toDateInput(date) {
+      return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    }
+    window.toHM = function toHM(value) {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? "" : String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
+    window.setText = function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
 
-    const hoursList = document.getElementById("hours-list");
-    HOURS.forEach((h) => {
-      const row = document.createElement("div");
-      row.className = "hours-row" + (h.hours === "Fermé" ? " closed" : "");
-      row.innerHTML = `<span>${h.day}</span><span class="hours-value">${h.hours}</span>`;
-      hoursList.appendChild(row);
-    });
-
-    window.toggleAssistant = function toggleAssistant() {
-      document.getElementById("assistant-panel").classList.toggle("open");
+    /* ---------------------------------------------------------
+       Chargement de l'espace et de ses services
+       --------------------------------------------------------- */
+    window.loadEspace = async function loadEspace() {
+      try {
+        ESPACE = await publicApi.getEspace();
+      } catch (e) {
+        // Espace non configuré ou serveur indisponible : on le dit, on n'invente rien.
+        document.getElementById("services-grid").innerHTML = `<p class="cr-empty">Cet espace n'est pas encore configuré. Revenez bientôt.</p>`;
+        setText("hours-list", "");
+        return;
+      }
+      PROS = ESPACE.professionnels || [];
+      SELECTED_PRO = PROS[0] || null;
+      renderEspaceInfos();
+      renderHours();
+      renderProSelector();
+      await loadServices();
     }
 
-    // ---- Animations au scroll (fade + montée) ----
-    const revealTargets = document.querySelectorAll(".reveal");
+    window.renderEspaceInfos = function renderEspaceInfos() {
+      const nom = ESPACE.platformName || "Réservation en ligne";
+      const domaine = [ESPACE.domaine, ESPACE.address].filter(Boolean).join(" · ");
+      setText("brandName", nom);
+      setText("brandDomain", domaine || "Prise de rendez-vous");
+      document.title = nom;
+
+      const heroTitle = document.getElementById("heroTitle");
+      if (heroTitle) heroTitle.innerHTML = ESPACE.slogan ? esc(ESPACE.slogan) : `Prenez rendez-vous avec <span class="accent">${esc(nom)}</span> en ligne.`;
+      setText("heroDesc", ESPACE.description || "Choisissez un service, une date et un créneau réellement disponible.");
+
+      const eyebrow = document.getElementById("heroEyebrowText");
+      if (eyebrow) eyebrow.textContent = [ESPACE.domaine, ESPACE.address].filter(Boolean).join(" · ") || nom;
+
+      // Bandeau d'informations : seules les valeurs renseignées sont affichées.
+      const infos = [
+        ESPACE.address ? { icon: "pin", text: ESPACE.address } : null,
+        ESPACE.phone ? { icon: "phone", text: ESPACE.phone } : null,
+        ESPACE.horairesGeneraux ? { icon: "clock", text: ESPACE.horairesGeneraux } : null,
+        ESPACE.email ? { icon: "mail", text: ESPACE.email } : null,
+      ].filter(Boolean);
+      const ICONS = {
+        pin: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+        phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',
+        clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+        mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>',
+      };
+      const row = document.getElementById("heroInfoRow");
+      if (row) {
+        row.innerHTML = infos.map((i) => `<span class="cr-info-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[i.icon]}</svg>${esc(i.text)}</span>`).join("");
+      }
+      const joursLabel = (ESPACE.joursOuvrables || []).join(", ");
+      setText("heroHoursTitle", [joursLabel, ESPACE.horairesGeneraux].filter(Boolean).join(" · ") || "Horaires non renseignés");
+      setText("footerName", [nom, ESPACE.address].filter(Boolean).join(" — "));
+    }
+
+    // Les jours ouvrables et les horaires viennent de la configuration de l'espace.
+    window.renderHours = function renderHours() {
+      const list = document.getElementById("hours-list");
+      if (!list) return;
+      const ouverts = ESPACE.joursOuvrables || [];
+      if (!ouverts.length && !ESPACE.horairesGeneraux) {
+        list.innerHTML = `<p class="cr-empty">Horaires non renseignés.</p>`;
+        return;
+      }
+      list.innerHTML = JOURS.map((j) => {
+        const ouvert = ouverts.includes(j);
+        return `<div class="hours-row${ouvert ? "" : " closed"}"><span>${j}</span><span class="hours-value">${ouvert ? esc(ESPACE.horairesGeneraux || "Ouvert") : "Fermé"}</span></div>`;
+      }).join("");
+    }
+
+    // Un espace peut réunir plusieurs praticiens : on ne choisit pour le client
+    // que s'il n'y en a qu'un.
+    window.renderProSelector = function renderProSelector() {
+      const wrap = document.getElementById("proSelector");
+      if (!wrap) return;
+      if (PROS.length <= 1) { wrap.innerHTML = ""; wrap.style.display = "none"; return; }
+      wrap.style.display = "flex";
+      wrap.innerHTML = PROS.map((p) => `<button type="button" class="pro-chip${SELECTED_PRO && p.id === SELECTED_PRO.id ? " active" : ""}" onclick="selectPro('${esc(p.id)}')">${esc(p.nom)}${p.specialite ? ` · ${esc(p.specialite)}` : ""}</button>`).join("");
+    }
+    window.selectPro = async function selectPro(id) {
+      SELECTED_PRO = PROS.find((p) => p.id === id) || SELECTED_PRO;
+      renderProSelector();
+      await loadServices();
+    }
+
+    window.loadServices = async function loadServices() {
+      const grid = document.getElementById("services-grid");
+      if (!grid) return;
+      if (!SELECTED_PRO) {
+        grid.innerHTML = `<p class="cr-empty">Aucun professionnel n'est encore actif sur cet espace.</p>`;
+        return;
+      }
+      grid.innerHTML = `<p class="cr-empty">Chargement des services…</p>`;
+      try {
+        SERVICES = await publicApi.getServices(SELECTED_PRO.id);
+      } catch (e) {
+        grid.innerHTML = `<p class="cr-empty">Les services n'ont pas pu être chargés.</p>`;
+        return;
+      }
+      if (!SERVICES.length) {
+        grid.innerHTML = `<p class="cr-empty">Aucun service n'est proposé à la réservation pour le moment.</p>`;
+        return;
+      }
+      grid.innerHTML = "";
+      SERVICES.forEach((s, i) => {
+        const prix = fmtPrix(s.prix);
+        const card = document.createElement("div");
+        card.className = "service-card reveal visible";
+        card.style.transitionDelay = (i * 0.08) + "s";
+        // Pas d'image de remplacement : seules les images réellement renseignées s'affichent.
+        card.innerHTML = `
+          ${s.imageUrl ? `<div class="service-image-wrap">
+            <img class="service-image" src="${esc(s.imageUrl)}" alt="${esc(s.nom)}" loading="lazy" />
+            <span class="service-image-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              ${s.dureeMinutes} min
+            </span>
+          </div>` : ""}
+          <div class="service-body">
+            <div class="service-top">
+              <div>
+                <p class="service-name">${esc(s.nom)}</p>
+                ${s.description ? `<p class="service-note">${esc(s.description)}</p>` : ""}
+              </div>
+              ${prix ? `<div class="service-price">${esc(prix)}</div>` : ""}
+            </div>
+            <div class="service-bottom">
+              <span class="service-duration">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                ${s.dureeMinutes} min
+              </span>
+              ${s.statut === "DISPONIBLE"
+                ? `<button class="service-cta" onclick="openBooking('${esc(s.id)}')">Réserver
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>`
+                : `<span class="service-unavailable">${s.statut === "COMPLET" ? "Complet" : "Indisponible"}</span>`}
+            </div>
+          </div>`;
+        grid.appendChild(card);
+      });
+    }
+
+    /* ---- Animations au scroll (fade + montée) ---- */
     const revealObserver = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -115,17 +201,15 @@ export default function CrenoPagePublique() {
       },
       { threshold: 0.15 }
     );
-    revealTargets.forEach((el) => revealObserver.observe(el));
+    document.querySelectorAll(".reveal").forEach((el) => revealObserver.observe(el));
     __observers.push(revealObserver);
-
-    // Marquer les éléments statiques comme "reveal" une fois le DOM prêt
     document.querySelectorAll(".cr-floating, .cr-trust-item, .info-card").forEach((el, i) => {
       el.classList.add("reveal");
       el.style.transitionDelay = (i * 0.06) + "s";
       revealObserver.observe(el);
     });
 
-    // ---- Parallaxe souris sur la photo du hero ----
+    /* ---- Parallaxe souris sur la photo du hero (décor seul) ---- */
     const heroSection = document.querySelector(".cr-hero-photo");
     const heroImgs = document.querySelectorAll(".cr-hero-bg");
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -147,188 +231,26 @@ export default function CrenoPagePublique() {
       }, { signal: ac.signal });
     }
 
-    /* ---- Toast animé "SMS envoyé" près de la photo circulaire ---- */
-    const pzToast = document.getElementById("pzToast");
-    if (pzToast && !prefersReducedMotion) {
-      function cyclePzToast() {
-        pzToast.classList.add("pz-toast-show");
-        setTimeout(() => pzToast.classList.remove("pz-toast-show"), 2200);
-      }
-      __timeouts.push(setTimeout(cyclePzToast, 1200));
-      __intervals.push(setInterval(cyclePzToast, 5000));
-    }
-
-    /* ---- Widget de démonstration animée (boucle façon showreel SimplyBook) ---- */
-    const demoScreens = ["demoS1", "demoS2", "demoS3", "demoS4"];
-    let demoIndex = 0;
-    let demoInterval = null;
-    let demoTimers = [];
-    const demoName = "Karim Bensalem";
-    const demoWidgetEl = document.getElementById("demoWidget");
-    const demoCursorEl = document.getElementById("demoCursor");
-    const demoClickRingEl = document.getElementById("demoClickRing");
-
-    window.clearDemoTimers = function clearDemoTimers() {
-      demoTimers.forEach((t) => clearTimeout(t));
-      demoTimers = [];
-    }
-
-    // Déplace le curseur factice vers un élément et simule un clic (façon vidéo SimplyBook)
-    window.demoCursorClick = function demoCursorClick(targetEl, onArrive) {
-      if (!demoWidgetEl || !demoCursorEl || !targetEl) return;
-      const wRect = demoWidgetEl.getBoundingClientRect();
-      const tRect = targetEl.getBoundingClientRect();
-      const x = tRect.left - wRect.left + tRect.width / 2 - 3;
-      const y = tRect.top - wRect.top + tRect.height / 2 - 2;
-      demoCursorEl.classList.add("dc-show");
-      demoCursorEl.style.left = x + "px";
-      demoCursorEl.style.top = y + "px";
-      demoTimers.push(setTimeout(() => {
-        demoClickRingEl.style.left = (x + 9) + "px";
-        demoClickRingEl.style.top = (y + 10) + "px";
-        demoClickRingEl.classList.remove("dc-pulse");
-        void demoClickRingEl.offsetWidth; // relance l'animation
-        demoClickRingEl.classList.add("dc-pulse");
-        if (onArrive) onArrive();
-      }, 620));
-    }
-
-    window.typeDemoName = function typeDemoName() {
-      const el = document.getElementById("demoTypedName");
-      if (!el) return;
-      el.innerHTML = "";
-      let i = 0;
-      const t = setInterval(() => {
-        if (i > demoName.length) { clearInterval(t); return; }
-        el.innerHTML = demoName.slice(0, i) + '<span class="demo-caret"></span>';
-        i++;
-      }, 90);
-      demoTimers.push(t);
-    }
-
-    window.fireDemoConfetti = function fireDemoConfetti() {
-      const wrap = document.getElementById("demoConfettiWrap");
-      if (!wrap) return;
-      wrap.querySelectorAll(".demo-confetti").forEach((n) => n.remove());
-      const colors = ["#8957FF", "#FF6BAE", "#4ECDC4", "#FFB86B", "#6BB6FF"];
-      for (let i = 0; i < 10; i++) {
-        const dot = document.createElement("span");
-        dot.className = "demo-confetti";
-        const angle = (Math.PI * 2 * i) / 10;
-        const dist = 46 + Math.random() * 20;
-        dot.style.setProperty("--cx", Math.cos(angle) * dist + "px");
-        dot.style.setProperty("--cy", Math.sin(angle) * dist + "px");
-        dot.style.left = "50%"; dot.style.top = "50%";
-        dot.style.background = colors[i % colors.length];
-        dot.style.animationDelay = (Math.random() * 0.15) + "s";
-        wrap.appendChild(dot);
-      }
-    }
-
-    // Choréographie du curseur : où cliquer, selon l'écran affiché (comme dans la vidéo SimplyBook)
-    window.choreographDemoScreen = function choreographDemoScreen(screenId) {
-      if (prefersReducedMotion) return;
-      demoCursorEl.classList.remove("dc-show");
-      if (screenId === "demoS1") {
-        demoTimers.push(setTimeout(() => {
-          const btn = document.querySelector("#demoSvcRow1 .demo-svc-btn");
-          demoCursorClick(btn, () => document.getElementById("demoSvcRow1").classList.add("picked"));
-        }, 700));
-      } else if (screenId === "demoS2") {
-        demoTimers.push(setTimeout(() => {
-          demoCursorClick(document.getElementById("demoDaySel"));
-        }, 500));
-        demoTimers.push(setTimeout(() => {
-          demoCursorClick(document.getElementById("demoSlotSel"));
-        }, 2000));
-      } else if (screenId === "demoS3") {
-        demoTimers.push(setTimeout(() => {
-          demoCursorClick(document.getElementById("demoSubmitBtn"));
-        }, 2500));
-      } else if (screenId === "demoS4") {
-        demoTimers.push(setTimeout(() => {
-          demoCursorClick(document.getElementById("demoAgainBtn"));
-        }, 2200));
-      }
-    }
-
-    window.showDemoScreen = function showDemoScreen(i) {
-      clearDemoTimers();
-      document.getElementById("demoSvcRow1").classList.remove("picked");
-      demoScreens.forEach((id, idx) => {
-        const el = document.getElementById(id);
-        if (el) el.classList.toggle("active", idx === i);
-      });
-      if (demoScreens[i] === "demoS3") demoTimers.push(setTimeout(typeDemoName, 250));
-      if (demoScreens[i] === "demoS4") demoTimers.push(setTimeout(fireDemoConfetti, 150));
-      choreographDemoScreen(demoScreens[i]);
-    }
-
-    window.startDemoWidget = function startDemoWidget() {
-      if (prefersReducedMotion) return;
-      showDemoScreen(0);
-      demoInterval = setInterval(() => {
-        demoIndex = (demoIndex + 1) % demoScreens.length;
-        showDemoScreen(demoIndex);
-      }, 3600);
-      __intervals.push(demoInterval);
-    }
-    startDemoWidget();
-
-    /* ---- Photo principale : fondu automatique entre les 3 photos de l'enchaînement ---- */
-    const HERO_SEQ = [
-      { src: "https://images.unsplash.com/photo-1758876023053-3aa541a0935b?fm=jpg&q=80&w=1600&auto=format&fit=crop", label: "1 · Prendre rendez-vous par téléphone" },
-      { src: "https://images.unsplash.com/photo-1621606677061-ec5eda5c04e9?fm=jpg&q=80&w=1600&auto=format&fit=crop", label: "2 · Remplir le formulaire" },
-      { src: "https://images.unsplash.com/photo-1758874383881-cd90c326058e?fm=jpg&q=80&w=1600&auto=format&fit=crop", label: "3 · Rendez-vous confirmé" },
-    ];
-    const heroLayerEls = [document.getElementById("heroBgA"), document.getElementById("heroBgB")];
-    let heroActiveLayer = 0;
-    let heroSeqIndex = 0;
-    const heroFlowText = document.getElementById("heroFlowText");
-    const heroFlowDots = document.getElementById("heroFlowDots") ? document.getElementById("heroFlowDots").children : [];
-
-    window.setHeroFlowUI = function setHeroFlowUI(i) {
-      if (heroFlowText) heroFlowText.textContent = HERO_SEQ[i].label;
-      Array.from(heroFlowDots).forEach((d, idx) => d.classList.toggle("on", idx === i));
-    }
-    setHeroFlowUI(0);
-
-    if (!prefersReducedMotion && heroLayerEls[0] && heroLayerEls[1]) {
-      __intervals.push(setInterval(() => {
-        const nextIndex = (heroSeqIndex + 1) % HERO_SEQ.length;
-        const incoming = heroLayerEls[1 - heroActiveLayer];
-        incoming.src = HERO_SEQ[nextIndex].src;
-        heroLayerEls[heroActiveLayer].classList.remove("hb-active");
-        incoming.classList.add("hb-active");
-        heroActiveLayer = 1 - heroActiveLayer;
-        heroSeqIndex = nextIndex;
-        setHeroFlowUI(nextIndex);
-      }, 4200));
-    }
-
     /* =========================================================
-       Réservation : calendrier animé → formulaire → confirmation
+       Réservation : calendrier → créneaux réels → formulaire → confirmation
        ========================================================= */
-    const DAY_NAMES = ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
-    const CLOSED_WEEKDAY = 5; // Vendredi fermé (cf. HOURS)
+    const DAY_NAMES = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 
     const booking = {
-      serviceIndex: 0,
+      serviceId: null,
       step: 1,
       days: [],
-      selectedDay: null,   // Date object
-      selectedTime: null,  // "09:00"
-      patient: { name: "", phone: "", note: "" },
+      selectedDay: null,    // objet Date
+      slots: [],            // créneaux ISO renvoyés par le backend
+      slotsLoading: false,
+      selectedSlot: null,   // ISO exact du créneau retenu
+      patient: { nom: "", prenom: "", telephone: "", email: "", note: "" },
+      submitting: false,
+      error: "",
     };
-    let lastConfirmedBooking = null;
+    let confirmed = null;   // rendez-vous réellement créé (réponse du backend)
 
-    // petit hash déterministe pour simuler des créneaux déjà pris
-    window.seedTaken = function seedTaken(dateStr, time) {
-      let h = 0;
-      const s = dateStr + time;
-      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 97;
-      return h % 4 === 0; // ~25% des créneaux indisponibles
-    }
+    window.currentService = function currentService() { return SERVICES.find((s) => s.id === booking.serviceId) || null; }
 
     window.buildDays = function buildDays() {
       const days = [];
@@ -341,29 +263,20 @@ export default function CrenoPagePublique() {
       booking.days = days;
     }
 
-    window.timeSlotsFor = function timeSlotsFor(date) {
-      const isThursday = date.getDay() === 4;
-      const end = isThursday ? 13 : 16;
-      const slots = [];
-      for (let h = 8; h < end; h++) {
-        slots.push(`${String(h).padStart(2,"0")}:00`);
-        slots.push(`${String(h).padStart(2,"0")}:30`);
-      }
-      return slots;
-    }
-
-    window.fmtDateLong = function fmtDateLong(date) {
-      return date.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
-    }
-
-    window.openBooking = function openBooking(serviceIndex) {
-      booking.serviceIndex = typeof serviceIndex === "number" ? serviceIndex : 0;
+    window.openBooking = function openBooking(serviceId) {
+      const service = SERVICES.find((s) => s.id === serviceId) || SERVICES.find((s) => s.statut === "DISPONIBLE");
+      if (!service) { alert("Aucun service n'est disponible à la réservation."); return; }
+      booking.serviceId = service.id;
       booking.step = 1;
       booking.selectedDay = null;
-      booking.selectedTime = null;
+      booking.slots = [];
+      booking.selectedSlot = null;
+      booking.error = "";
+      confirmed = null;
       buildDays();
-      document.getElementById("bookingOverlay").classList.add("open");
-      requestAnimationFrame(() => document.getElementById("bookingOverlay").classList.add("visible"));
+      const overlay = document.getElementById("bookingOverlay");
+      overlay.classList.add("open");
+      requestAnimationFrame(() => overlay.classList.add("visible"));
       document.body.style.overflow = "hidden";
       renderBookingStep();
     }
@@ -376,18 +289,40 @@ export default function CrenoPagePublique() {
     }
 
     window.updateProgress = function updateProgress() {
-      [1,2,3].forEach((n) => {
+      [1, 2, 3].forEach((n) => {
         const dot = document.getElementById("dot" + n);
+        if (!dot) return;
         dot.classList.toggle("active", n === booking.step);
         dot.classList.toggle("done", n < booking.step);
       });
     }
 
+    // Les créneaux affichés sont exactement ceux calculés par le backend :
+    // disponibilités du professionnel, fermetures et rendez-vous déjà pris.
+    window.loadSlots = async function loadSlots() {
+      if (!booking.selectedDay || !booking.serviceId || !SELECTED_PRO) return;
+      booking.slotsLoading = true;
+      booking.slots = [];
+      booking.selectedSlot = null;
+      renderBookingStep();
+      try {
+        const res = await publicApi.getSlots(SELECTED_PRO.id, booking.serviceId, toDateInput(booking.selectedDay));
+        booking.slots = res.creneaux || [];
+        booking.error = "";
+      } catch (e) {
+        booking.slots = [];
+        booking.error = "Les créneaux n'ont pas pu être chargés pour cette date.";
+      }
+      booking.slotsLoading = false;
+      renderBookingStep();
+    }
+
     window.renderBookingStep = function renderBookingStep() {
       updateProgress();
-      const service = SERVICES[booking.serviceIndex];
+      const service = currentService();
       const titleEl = document.getElementById("bookingTitle");
       const zone = document.getElementById("bookingStepContent");
+      if (!zone) return;
       zone.innerHTML = "";
       const panel = document.createElement("div");
       panel.className = "booking-panel";
@@ -397,13 +332,11 @@ export default function CrenoPagePublique() {
         const calGrid = document.createElement("div");
         calGrid.className = "booking-cal-grid";
         booking.days.forEach((d, i) => {
-          const closed = d.getDay() === CLOSED_WEEKDAY;
           const cell = document.createElement("div");
-          cell.className = "booking-day" + (closed ? " disabled" : "") +
-            (booking.selectedDay && d.toDateString() === booking.selectedDay.toDateString() ? " selected" : "");
+          cell.className = "booking-day" + (booking.selectedDay && d.toDateString() === booking.selectedDay.toDateString() ? " selected" : "");
           cell.style.animationDelay = (i * 0.025) + "s";
           cell.innerHTML = `<span class="dow">${DAY_NAMES[d.getDay()]}</span><span class="num">${d.getDate()}</span>`;
-          if (!closed) cell.onclick = () => { booking.selectedDay = d; booking.selectedTime = null; renderBookingStep(); };
+          cell.onclick = () => { booking.selectedDay = d; loadSlots(); };
           calGrid.appendChild(cell);
         });
         panel.appendChild(calGrid);
@@ -414,19 +347,29 @@ export default function CrenoPagePublique() {
           label.textContent = `Créneaux disponibles — ${fmtDateLong(booking.selectedDay)}`;
           panel.appendChild(label);
 
-          const slotsWrap = document.createElement("div");
-          slotsWrap.className = "booking-slots";
-          const dateStr = booking.selectedDay.toDateString();
-          timeSlotsFor(booking.selectedDay).forEach((t, i) => {
-            const taken = seedTaken(dateStr, t);
-            const slot = document.createElement("div");
-            slot.className = "booking-slot" + (taken ? " taken" : "") + (booking.selectedTime === t ? " selected" : "");
-            slot.style.animationDelay = (i * 0.02) + "s";
-            slot.textContent = t;
-            if (!taken) slot.onclick = () => { booking.selectedTime = t; renderBookingStep(); };
-            slotsWrap.appendChild(slot);
-          });
-          panel.appendChild(slotsWrap);
+          if (booking.slotsLoading) {
+            const p = document.createElement("p");
+            p.className = "cr-empty";
+            p.textContent = "Chargement des créneaux…";
+            panel.appendChild(p);
+          } else if (!booking.slots.length) {
+            const p = document.createElement("p");
+            p.className = "cr-empty";
+            p.textContent = booking.error || "Aucun créneau disponible ce jour-là. Choisissez une autre date.";
+            panel.appendChild(p);
+          } else {
+            const slotsWrap = document.createElement("div");
+            slotsWrap.className = "booking-slots";
+            booking.slots.forEach((iso, i) => {
+              const slot = document.createElement("div");
+              slot.className = "booking-slot" + (booking.selectedSlot === iso ? " selected" : "");
+              slot.style.animationDelay = (i * 0.02) + "s";
+              slot.textContent = toHM(iso);
+              slot.onclick = () => { booking.selectedSlot = iso; renderBookingStep(); };
+              slotsWrap.appendChild(slot);
+            });
+            panel.appendChild(slotsWrap);
+          }
         }
 
         const nav = document.createElement("div");
@@ -435,74 +378,66 @@ export default function CrenoPagePublique() {
         const nextBtn = document.createElement("button");
         nextBtn.className = "booking-btn booking-btn-primary";
         nextBtn.textContent = "Continuer";
-        nextBtn.disabled = !(booking.selectedDay && booking.selectedTime);
+        nextBtn.disabled = !booking.selectedSlot;
         nextBtn.onclick = () => { booking.step = 2; renderBookingStep(); };
         nav.appendChild(nextBtn);
         panel.appendChild(nav);
 
       } else if (booking.step === 2) {
         titleEl.textContent = "Vos coordonnées";
-        const layout = document.createElement("div");
-        layout.className = "booking-form-layout";
-
-        const photoBox = document.createElement("div");
-        photoBox.className = "booking-photo";
-        photoBox.innerHTML = `<img src="https://images.unsplash.com/photo-1621606677061-ec5eda5c04e9?fm=jpg&q=80&w=600&auto=format&fit=crop" alt="Remplissage du formulaire de rendez-vous" /><span class="booking-photo-tag">${service.name}</span>`;
-        layout.appendChild(photoBox);
-
         const formBox = document.createElement("div");
+        const prix = fmtPrix(service?.prix);
         const recap = document.createElement("div");
         recap.className = "booking-recap";
-        recap.innerHTML = `<span><b>${service.name}</b> · ${service.duration} · ${service.price}</span><span>${fmtDateLong(booking.selectedDay)} à ${booking.selectedTime}</span>`;
+        recap.innerHTML = `<span><b>${esc(service?.nom || "")}</b> · ${service?.dureeMinutes || 0} min${prix ? ` · ${esc(prix)}` : ""}</span><span>${fmtDateLong(booking.selectedDay)} à ${toHM(booking.selectedSlot)}</span>`;
         formBox.appendChild(recap);
 
         formBox.innerHTML += `
-          <div class="booking-field">
-            <label>Nom complet</label>
-            <input type="text" id="pName" value="${booking.patient.name}" placeholder="Ex. Karim Bensalem" />
+          <div class="booking-field-2col">
+            <div class="booking-field">
+              <label>Prénom *</label>
+              <input type="text" id="pPrenom" value="${esc(booking.patient.prenom)}" />
+            </div>
+            <div class="booking-field">
+              <label>Nom *</label>
+              <input type="text" id="pNom" value="${esc(booking.patient.nom)}" />
+            </div>
           </div>
           <div class="booking-field">
-            <label>Téléphone</label>
-            <input type="tel" id="pPhone" value="${booking.patient.phone}" placeholder="06 12 34 56 78" />
+            <label>Téléphone *</label>
+            <input type="tel" id="pPhone" value="${esc(booking.patient.telephone)}" />
+          </div>
+          <div class="booking-field">
+            <label>E-mail (pour recevoir votre lien de gestion)</label>
+            <input type="email" id="pEmail" value="${esc(booking.patient.email)}" />
           </div>
           <div class="booking-field">
             <label>Motif / note (optionnel)</label>
-            <textarea id="pNote" placeholder="Précisez si besoin...">${booking.patient.note}</textarea>
+            <textarea id="pNote">${esc(booking.patient.note)}</textarea>
           </div>
-          <div class="booking-error" id="formError">Merci de renseigner votre nom et votre téléphone.</div>
+          <div class="booking-error${booking.error ? " show" : ""}" id="formError">${esc(booking.error || "Merci de renseigner votre prénom, votre nom et votre téléphone.")}</div>
         `;
-        layout.appendChild(formBox);
-        panel.appendChild(layout);
+        panel.appendChild(formBox);
 
         const nav = document.createElement("div");
         nav.className = "booking-nav";
         const backBtn = document.createElement("button");
         backBtn.className = "booking-btn booking-btn-ghost";
         backBtn.textContent = "Retour";
-        backBtn.onclick = () => { booking.step = 1; renderBookingStep(); };
+        backBtn.onclick = () => { booking.error = ""; booking.step = 1; renderBookingStep(); };
         const nextBtn = document.createElement("button");
         nextBtn.className = "booking-btn booking-btn-primary";
-        nextBtn.textContent = "Confirmer le rendez-vous";
-        nextBtn.onclick = () => {
-          const name = document.getElementById("pName").value.trim();
-          const phone = document.getElementById("pPhone").value.trim();
-          const note = document.getElementById("pNote").value.trim();
-          if (!name || !phone) { document.getElementById("formError").classList.add("show"); return; }
-          booking.patient = { name, phone, note };
-          booking.step = 3;
-          renderBookingStep();
-        };
+        nextBtn.textContent = booking.submitting ? "Envoi en cours…" : "Confirmer le rendez-vous";
+        nextBtn.disabled = booking.submitting;
+        nextBtn.onclick = submitBooking;
         nav.appendChild(backBtn);
         nav.appendChild(nextBtn);
         panel.appendChild(nav);
 
-      } else if (booking.step === 3) {
+      } else if (booking.step === 3 && confirmed) {
         titleEl.textContent = "C'est confirmé";
-        const service = SERVICES[booking.serviceIndex];
-        lastConfirmedBooking = {
-          service, patient: booking.patient,
-          date: booking.selectedDay, time: booking.selectedTime,
-        };
+        const lien = manageUrl(confirmed.manageToken);
+        const prix = fmtPrix(confirmed.service?.prix);
 
         const head = document.createElement("div");
         head.className = "booking-confirm-head";
@@ -511,44 +446,21 @@ export default function CrenoPagePublique() {
             <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#8957FF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
           </div>
           <h4 class="booking-confirm-title display">Rendez-vous confirmé</h4>
-          <p class="booking-confirm-sub">Un SMS de rappel sera envoyé à ${booking.patient.phone}</p>
+          <p class="booking-confirm-sub">Conservez le lien ci-dessous : il vous permet de consulter ou d'annuler votre rendez-vous.</p>
         `;
         panel.appendChild(head);
-
-        const photo = document.createElement("div");
-        photo.className = "booking-confirm-photo";
-        photo.innerHTML = `<img src="https://images.unsplash.com/photo-1758874383881-cd90c326058e?fm=jpg&q=80&w=700&auto=format&fit=crop" alt="Client heureux, rendez-vous confirmé" />`;
-        panel.appendChild(photo);
 
         const ticket = document.createElement("div");
         ticket.className = "ticket";
         ticket.style.animation = "none";
         ticket.style.margin = "0 auto 4px";
-        ticket.innerHTML = `
-          <div class="ticket-top">
-            <div class="ticket-top-row">
-              <div><div class="ticket-label">Patient</div><div class="ticket-value">${booking.patient.name}</div></div>
-              <div><div class="ticket-label">Cabinet</div><div class="ticket-value">Dr. Haddad</div></div>
-            </div>
-          </div>
-          <div class="ticket-divider-wrap"><span class="ticket-notch left"></span><span class="ticket-notch right"></span></div>
-          <div class="ticket-dashes"></div>
-          <div class="ticket-bottom">
-            <div class="ticket-service">
-              <div class="ticket-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></svg>
-              </div>
-              <div><div class="ticket-service-name">${service.name}</div><div class="ticket-service-sub">${service.duration} · ${service.price}</div></div>
-            </div>
-            <div class="ticket-meta">
-              <div class="ticket-meta-block"><div class="ticket-label">Créneau</div><div class="ticket-value">${fmtDateLong(booking.selectedDay)}, ${booking.selectedTime}</div></div>
-              <div class="ticket-qr">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="16" y="3" width="5" height="5" rx="1"/><rect x="3" y="16" width="5" height="5" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/><path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/></svg>
-              </div>
-            </div>
-          </div>
-        `;
+        ticket.innerHTML = ticketHtml(confirmed);
         panel.appendChild(ticket);
+
+        const lienBox = document.createElement("div");
+        lienBox.className = "booking-link-box";
+        lienBox.innerHTML = `<label>Votre lien de gestion</label><input type="text" id="manageLink" readonly value="${esc(lien)}" /><button type="button" class="booking-btn booking-btn-ghost" onclick="copyManageLink()">Copier le lien</button>`;
+        panel.appendChild(lienBox);
 
         const nav = document.createElement("div");
         nav.className = "booking-nav";
@@ -556,7 +468,7 @@ export default function CrenoPagePublique() {
         const doneBtn = document.createElement("button");
         doneBtn.className = "booking-btn booking-btn-primary";
         doneBtn.textContent = "Terminer";
-        doneBtn.onclick = () => { closeBooking(); updateHeroTicket(); };
+        doneBtn.onclick = () => { closeBooking(); showRealTicket(); };
         nav.appendChild(doneBtn);
         panel.appendChild(nav);
       }
@@ -564,32 +476,98 @@ export default function CrenoPagePublique() {
       zone.appendChild(panel);
     }
 
-    // Met à jour la carte "ticket" affichée en haut de page avec le dernier rendez-vous confirmé
-    window.updateHeroTicket = function updateHeroTicket() {
-      if (!lastConfirmedBooking) return;
-      const b = lastConfirmedBooking;
-      if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
-      clearDemoTimers();
-      const widget = document.getElementById("demoWidget");
-      const heroTicket = document.getElementById("realTicket");
-      if (widget) widget.classList.add("dw-hidden");
-      if (!heroTicket) return;
-      heroTicket.classList.remove("dw-hidden");
-      heroTicket.querySelectorAll(".ticket-value")[0].textContent = b.patient.name;
-      heroTicket.querySelector(".ticket-service-name").textContent = b.service.name;
-      heroTicket.querySelector(".ticket-service-sub").textContent = `${b.service.duration} · ${b.service.price}`;
-      const metaValue = heroTicket.querySelector(".ticket-meta-block .ticket-value");
-      metaValue.textContent = `${fmtDateLong(b.date)}, ${b.time}`;
-      heroTicket.style.animation = "none";
-      heroTicket.style.boxShadow = "0 0 0 3px var(--primary), 0 24px 60px -24px rgba(18,36,47,0.35)";
-      setTimeout(() => { heroTicket.style.animation = "cr-float 5s ease-in-out infinite"; }, 900);
+    window.manageUrl = function manageUrl(token) {
+      return `${window.location.origin}/rdv/${token}`;
+    }
+    window.copyManageLink = function copyManageLink() {
+      const el = document.getElementById("manageLink");
+      if (!el) return;
+      el.select();
+      navigator.clipboard?.writeText(el.value);
     }
 
-    /* -------- Gérer mon rendez-vous (recherche) -------- */
+    window.ticketHtml = function ticketHtml(rdv) {
+      const debut = new Date(rdv.dateDebut);
+      const prix = fmtPrix(rdv.service?.prix);
+      return `
+        <div class="ticket-top">
+          <div class="ticket-top-row">
+            <div><div class="ticket-label">Client</div><div class="ticket-value">${esc(`${rdv.client?.prenom || ""} ${rdv.client?.nom || ""}`.trim())}</div></div>
+            <div><div class="ticket-label">Professionnel</div><div class="ticket-value">${esc(rdv.professionnel?.nom || SELECTED_PRO?.nom || "—")}</div></div>
+          </div>
+        </div>
+        <div class="ticket-divider-wrap"><span class="ticket-notch left"></span><span class="ticket-notch right"></span></div>
+        <div class="ticket-dashes"></div>
+        <div class="ticket-bottom">
+          <div class="ticket-service">
+            <div class="ticket-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            </div>
+            <div><div class="ticket-service-name">${esc(rdv.service?.nom || "—")}</div><div class="ticket-service-sub">${rdv.service?.dureeMinutes || 0} min${prix ? ` · ${esc(prix)}` : ""}</div></div>
+          </div>
+          <div class="ticket-meta">
+            <div class="ticket-meta-block"><div class="ticket-label">Créneau</div><div class="ticket-value">${fmtDateLong(debut)}, ${toHM(rdv.dateDebut)}</div></div>
+          </div>
+        </div>`;
+    }
+
+    window.submitBooking = async function submitBooking() {
+      const prenom = (document.getElementById("pPrenom")?.value || "").trim();
+      const nom = (document.getElementById("pNom")?.value || "").trim();
+      const telephone = (document.getElementById("pPhone")?.value || "").trim().replace(/\s/g, "");
+      const email = (document.getElementById("pEmail")?.value || "").trim();
+      const note = (document.getElementById("pNote")?.value || "").trim();
+      booking.patient = { prenom, nom, telephone, email, note };
+      if (!prenom || !nom || !telephone) {
+        booking.error = "Merci de renseigner votre prénom, votre nom et votre téléphone.";
+        renderBookingStep();
+        return;
+      }
+      booking.submitting = true;
+      booking.error = "";
+      renderBookingStep();
+      try {
+        confirmed = await publicApi.createRdv({
+          professionnelId: SELECTED_PRO.id,
+          serviceId: booking.serviceId,
+          dateDebut: booking.selectedSlot,
+          nom, prenom, telephone,
+          email: email || undefined,
+          remarque: note || undefined,
+        });
+        booking.submitting = false;
+        booking.step = 3;
+        renderBookingStep();
+      } catch (e) {
+        booking.submitting = false;
+        const msg = e?.response?.data?.message || "La réservation n'a pas pu être enregistrée.";
+        booking.error = Array.isArray(msg) ? msg.join(", ") : msg;
+        // Conflit : le créneau vient d'être pris, on revient au calendrier rafraîchi.
+        if (e?.response?.status === 409) {
+          booking.step = 1;
+          renderBookingStep();
+          loadSlots();
+        } else {
+          renderBookingStep();
+        }
+      }
+    }
+
+    // Le ticket du hero n'affiche que le rendez-vous réellement créé dans cette session.
+    window.showRealTicket = function showRealTicket() {
+      const heroTicket = document.getElementById("realTicket");
+      if (!heroTicket || !confirmed) return;
+      heroTicket.innerHTML = ticketHtml(confirmed);
+      heroTicket.classList.remove("dw-hidden");
+      const placeholder = document.getElementById("ticketPlaceholder");
+      if (placeholder) placeholder.classList.add("dw-hidden");
+    }
+
+    /* -------- Gérer mon rendez-vous : recherche par lien de gestion -------- */
     window.openLookup = function openLookup() {
       document.getElementById("lookupResultZone").innerHTML = "";
       document.getElementById("lookupError").classList.remove("show");
-      document.getElementById("lookupPhone").value = "";
+      document.getElementById("lookupToken").value = confirmed ? manageUrl(confirmed.manageToken) : "";
       const overlay = document.getElementById("lookupOverlay");
       overlay.classList.add("open");
       requestAnimationFrame(() => overlay.classList.add("visible"));
@@ -601,23 +579,81 @@ export default function CrenoPagePublique() {
       document.body.style.overflow = "";
       setTimeout(() => overlay.classList.remove("open"), 200);
     }
-    window.doLookup = function doLookup() {
-      const phone = document.getElementById("lookupPhone").value.trim();
+    // Le rendez-vous est retrouvé côté serveur par son jeton : aucune recherche
+    // par téléphone n'est possible sans compte, et c'est voulu (confidentialité).
+    window.doLookup = async function doLookup() {
+      const saisie = document.getElementById("lookupToken").value.trim();
       const errEl = document.getElementById("lookupError");
       const zone = document.getElementById("lookupResultZone");
-      if (!phone) { errEl.classList.add("show"); zone.innerHTML = ""; return; }
+      const token = saisie.split("/").filter(Boolean).pop() || "";
+      if (!token) { errEl.textContent = "Collez le lien reçu lors de la confirmation."; errEl.classList.add("show"); zone.innerHTML = ""; return; }
       errEl.classList.remove("show");
-      if (lastConfirmedBooking && lastConfirmedBooking.patient.phone.replace(/\s/g,"") === phone.replace(/\s/g,"")) {
-        const b = lastConfirmedBooking;
-        zone.innerHTML = `<div class="lookup-result">
-          <b>${b.service.name}</b><br>
-          ${fmtDateLong(b.date)} à ${b.time}<br>
-          Patient : ${b.patient.name}<br>
-          Statut : <b style="color:var(--primary-dark)">Confirmé</b>
-        </div>`;
-      } else {
-        zone.innerHTML = `<div class="lookup-result">Aucun rendez-vous trouvé pour ce numéro. (Démo : réservez d'abord un créneau pour tester la recherche.)</div>`;
+      zone.innerHTML = `<div class="lookup-result">Recherche en cours…</div>`;
+      try {
+        const rdv = await publicApi.getByToken(token);
+        renderLookupResult(rdv);
+      } catch (e) {
+        zone.innerHTML = "";
+        errEl.textContent = "Aucun rendez-vous ne correspond à ce lien.";
+        errEl.classList.add("show");
       }
+    }
+    window.renderLookupResult = function renderLookupResult(rdv) {
+      const zone = document.getElementById("lookupResultZone");
+      const STATUTS = { RESERVE: "Réservé", CLIENT_ARRIVE: "Client arrivé", EN_COURS: "En cours", TERMINE: "Terminé", ABSENT: "Absent", ANNULE: "Annulé" };
+      zone.innerHTML = `<div class="lookup-result">
+        <b>${esc(rdv.service?.nom || "—")}</b><br>
+        ${fmtDateLong(new Date(rdv.dateDebut))} à ${toHM(rdv.dateDebut)}<br>
+        ${esc(rdv.professionnel?.nom || "")}<br>
+        Client : ${esc(`${rdv.client?.prenom || ""} ${rdv.client?.nom || ""}`.trim())}<br>
+        Statut : <b style="color:var(--primary-dark)">${esc(STATUTS[rdv.statut] || rdv.statut)}</b>
+        ${rdv.statut === "RESERVE" ? `<div style="margin-top:12px;"><button class="booking-btn booking-btn-ghost" onclick="cancelLookup('${esc(rdv.manageToken)}')">Annuler ce rendez-vous</button></div>` : ""}
+      </div>`;
+    }
+    window.cancelLookup = async function cancelLookup(token) {
+      if (!confirm("Annuler définitivement ce rendez-vous ?")) return;
+      try {
+        await publicApi.cancelByToken(token);
+        const rdv = await publicApi.getByToken(token);
+        renderLookupResult(rdv);
+      } catch (e) {
+        const errEl = document.getElementById("lookupError");
+        const msg = e?.response?.data?.message || "L'annulation n'a pas pu être effectuée.";
+        errEl.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
+        errEl.classList.add("show");
+      }
+    }
+
+    /* -------- Assistant : les réponses viennent du backend -------- */
+    let ASSISTANT_LOG = [];
+    window.toggleAssistant = function toggleAssistant() {
+      const panel = document.getElementById("assistant-panel");
+      panel.classList.toggle("open");
+      if (panel.classList.contains("open")) renderAssistantLog();
+    }
+    window.renderAssistantLog = function renderAssistantLog() {
+      const log = document.getElementById("assistantLog");
+      if (!log) return;
+      log.innerHTML = ASSISTANT_LOG.length
+        ? ASSISTANT_LOG.map((m) => `<div class="assistant-msg ${m.role}">${esc(m.text)}</div>`).join("")
+        : `<div class="assistant-msg bot">Posez une question sur les services, les horaires ou l'adresse — je réponds à partir des informations enregistrées.</div>`;
+      log.scrollTop = log.scrollHeight;
+    }
+    window.sendAssistant = async function sendAssistant() {
+      const input = document.getElementById("assistantInput");
+      if (!input) return;
+      const q = input.value.trim();
+      if (!q) return;
+      ASSISTANT_LOG.push({ role: "user", text: q });
+      input.value = "";
+      renderAssistantLog();
+      try {
+        const res = await assistantApi.ask(q, SELECTED_PRO?.id);
+        ASSISTANT_LOG.push({ role: "bot", text: res.answer });
+      } catch (e) {
+        ASSISTANT_LOG.push({ role: "bot", text: "La réponse n'a pas pu être obtenue. Réessayez dans un instant." });
+      }
+      renderAssistantLog();
     }
 
     // Fermer les modales en cliquant sur l'arrière-plan ou avec Échap
@@ -631,6 +667,8 @@ export default function CrenoPagePublique() {
       if (e.key === "Escape") { closeBooking(); closeLookup(); }
     }, { signal: ac.signal });
 
+    loadEspace();
+
     // ---- end ported script ----
 
     return () => {
@@ -639,27 +677,14 @@ export default function CrenoPagePublique() {
       __timeouts.forEach((t) => clearTimeout(t));
       __observers.forEach((o) => o.disconnect());
 
-      delete (window as any).toggleAssistant;
-      delete (window as any).clearDemoTimers;
-      delete (window as any).demoCursorClick;
-      delete (window as any).typeDemoName;
-      delete (window as any).fireDemoConfetti;
-      delete (window as any).choreographDemoScreen;
-      delete (window as any).showDemoScreen;
-      delete (window as any).startDemoWidget;
-      delete (window as any).setHeroFlowUI;
-      delete (window as any).seedTaken;
-      delete (window as any).buildDays;
-      delete (window as any).timeSlotsFor;
-      delete (window as any).fmtDateLong;
-      delete (window as any).openBooking;
-      delete (window as any).closeBooking;
-      delete (window as any).updateProgress;
-      delete (window as any).renderBookingStep;
-      delete (window as any).updateHeroTicket;
-      delete (window as any).openLookup;
-      delete (window as any).closeLookup;
-      delete (window as any).doLookup;
+      [
+        "esc", "fmtPrix", "fmtDateLong", "toDateInput", "toHM", "setText",
+        "loadEspace", "renderEspaceInfos", "renderHours", "renderProSelector", "selectPro",
+        "loadServices", "currentService", "buildDays", "openBooking", "closeBooking",
+        "updateProgress", "loadSlots", "renderBookingStep", "manageUrl", "copyManageLink",
+        "ticketHtml", "submitBooking", "showRealTicket", "openLookup", "closeLookup", "doLookup",
+        "renderLookupResult", "cancelLookup", "toggleAssistant", "renderAssistantLog", "sendAssistant",
+      ].forEach((k) => { delete (window as any)[k]; });
     };
   }, []);
 
@@ -1230,6 +1255,29 @@ export default function CrenoPagePublique() {
   }
   .lookup-result b { color: var(--ink); }
 
+  /* --- Éléments alimentés par l'API publique --- */
+  /* Message affiché quand le backend ne renvoie rien : on ne comble jamais un vide par un exemple. */
+  .cr-empty { grid-column: 1 / -1; text-align: center; font-size: 13px; color: var(--ink-soft); padding: 26px 10px; margin: 0; }
+  .service-unavailable { font-size: 12px; font-weight: 700; color: var(--ink-soft); background: var(--paper); border-radius: 999px; padding: 7px 14px; }
+  .pro-selector { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 22px; }
+  .pro-chip { border: 1.5px solid var(--line); background: var(--card); border-radius: 999px; padding: 8px 16px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); cursor: pointer; font-family: inherit; }
+  .pro-chip:hover { border-color: var(--primary); color: var(--primary-dark); }
+  .pro-chip.active { border-color: var(--primary); background: var(--primary-tint); color: var(--primary-dark); }
+  .ticket-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 190px; padding: 24px; border: 1.5px dashed var(--line); border-radius: var(--radius); background: var(--card); color: var(--ink-soft); text-align: center; }
+  .ticket-placeholder p { margin: 0; font-size: 12.5px; line-height: 1.5; max-width: 220px; }
+  .booking-field-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  @media (max-width: 560px) { .booking-field-2col { grid-template-columns: 1fr; } }
+  .booking-link-box { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 4px 0 10px; }
+  .booking-link-box label { display: block; font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-bottom: 6px; }
+  .booking-link-box input { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; font-size: 12px; font-family: inherit; color: var(--ink); background: var(--card); margin-bottom: 8px; }
+  .assistant-log { display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; margin: 10px 0; }
+  .assistant-msg { font-size: 12.5px; line-height: 1.5; padding: 9px 12px; border-radius: 12px; max-width: 90%; white-space: pre-wrap; }
+  .assistant-msg.bot { background: var(--paper); color: var(--ink); align-self: flex-start; }
+  .assistant-msg.user { background: var(--primary-tint); color: var(--primary-dark); align-self: flex-end; }
+  .assistant-input-row { display: flex; gap: 8px; }
+  .assistant-input-row input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 12.5px; font-family: inherit; color: var(--ink); }
+  .assistant-input-row button { border: none; background: var(--primary); color: #fff; border-radius: 10px; padding: 0 13px; cursor: pointer; display: flex; align-items: center; }
+
       `}</style>
 
   
@@ -1239,8 +1287,8 @@ export default function CrenoPagePublique() {
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></svg>
       </div>
       <div>
-        <div className="cr-brand-name display">Dr. Yasmine Haddad</div>
-        <div className="cr-brand-domain">Cardiologie · Sétif</div>
+        <div className="cr-brand-name display" id="brandName"></div>
+        <div className="cr-brand-domain" id="brandDomain"></div>
       </div>
     </div>
     <button type="button" className="cr-pro-link" onClick={() => navigate('/connexion')}>Espace Pro</button>
@@ -1269,18 +1317,13 @@ export default function CrenoPagePublique() {
       <circle cx="8" cy="14" r="1.3" fill="#fff"/><circle cx="12" cy="14" r="1.3" fill="#fff"/><circle cx="16" cy="14" r="1.3" fill="#fff"/>
     </svg>
 
-    <span className="hero-flow-badge" id="heroFlowBadge">
-      <span className="hero-flow-dots" id="heroFlowDots"><span className="on"></span><span></span><span></span></span>
-      <span id="heroFlowText">1 · Prendre rendez-vous par téléphone</span>
-    </span>
-
     <div className="cr-hero-content">
       <span className="cr-eyebrow">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        Cabinet conventionné · Sétif centre
+        <span id="heroEyebrowText"></span>
       </span>
-      <h1 className="cr-title display">Prenez rendez-vous avec le <span className="accent">Dr. Haddad</span> en 2 minutes.</h1>
-      <p className="cr-desc">Consultations de cardiologie, échographies et suivis post-opératoires. Choisissez un créneau disponible, sans appel ni attente.</p>
+      <h1 className="cr-title display" id="heroTitle"></h1>
+      <p className="cr-desc" id="heroDesc"></p>
       <div className="cr-cta-row">
         <button className="cr-btn cr-btn-primary" onClick={() => (window as any).openBooking()}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -1302,118 +1345,16 @@ export default function CrenoPagePublique() {
   <div className="cr-floating-wrap">
     <div className="cr-floating">
       <div>
-        <p className="hours-title" style={{marginBottom: '16px'}}>Cabinet ouvert aujourd'hui · 08:00–16:00</p>
-        <div className="cr-info-row">
-          <span className="cr-info-item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            12 Rue Larbi Ben M'hidi, Sétif
-          </span>
-          <span className="cr-info-item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-            036 84 12 07
-          </span>
-          <span className="cr-info-item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            Dim–Sam · 08:00–16:00
-          </span>
-        </div>
+        <p className="hours-title" style={{marginBottom: '16px'}} id="heroHoursTitle"></p>
+        <div className="cr-info-row" id="heroInfoRow"></div>
       </div>
 
-      
       <div className="ticket-wrap">
-        <div className="demo-widget" id="demoWidget">
-          <div className="demo-screen active" id="demoS1">
-            <p className="demo-eyebrow">Aperçu de la réservation</p>
-            <p className="demo-title">1. Choisir un service</p>
-            <div className="demo-svc-row" id="demoSvcRow1">
-              <div className="demo-svc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></svg></div>
-              <div className="demo-svc-info"><div className="demo-svc-name">Consultation cardiologie</div><div className="demo-svc-price">3 000 DA · 30 min</div></div>
-              <span className="demo-svc-btn">Choisir</span>
-            </div>
-            <div className="demo-svc-row">
-              <div className="demo-svc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8 12 14.7 8.5 11 3 16.5"/></svg></div>
-              <div className="demo-svc-info"><div className="demo-svc-name">Échographie cardiaque</div><div className="demo-svc-price">5 500 DA · 45 min</div></div>
-              <span className="demo-svc-btn">Choisir</span>
-            </div>
-          </div>
-
-          <div className="demo-screen" id="demoS2">
-            <p className="demo-eyebrow">Aperçu de la réservation</p>
-            <p className="demo-title">2. Choisir un créneau</p>
-            <div className="demo-cal-head"><span>Septembre 2026</span><div className="demo-cal-nav"><i></i><i></i></div></div>
-            <div className="demo-week">
-              <span className="demo-day demo-dow">L</span><span className="demo-day demo-dow">M</span><span className="demo-day demo-dow">M</span><span className="demo-day demo-dow">J</span><span className="demo-day demo-dow">V</span><span className="demo-day demo-dow">S</span><span className="demo-day demo-dow">D</span>
-              <span className="demo-day">14</span><span className="demo-day">15</span><span className="demo-day demo-selected" id="demoDaySel">16</span><span className="demo-day">17</span><span className="demo-day">18</span><span className="demo-day">19</span><span className="demo-day">20</span>
-            </div>
-            <div className="demo-slots">
-              <span className="demo-slot">09:00</span><span className="demo-slot demo-slot-on" id="demoSlotSel">10:30</span><span className="demo-slot">11:00</span>
-              <span className="demo-slot">13:30</span><span className="demo-slot">14:00</span><span className="demo-slot">15:00</span>
-            </div>
-          </div>
-
-          <div className="demo-screen" id="demoS3">
-            <p className="demo-eyebrow">Aperçu de la réservation</p>
-            <p className="demo-title">3. Vos coordonnées</p>
-            <div className="demo-field"><label>Nom complet</label><div className="demo-field-box" id="demoTypedName"></div></div>
-            <div className="demo-field"><label>Téléphone</label><div className="demo-field-box">06 •• •• •• 12</div></div>
-            <div className="demo-field"><label>Motif</label><div className="demo-field-box">Douleur thoracique légère</div></div>
-            <div className="demo-submit" id="demoSubmitBtn">Confirmer le rendez-vous</div>
-          </div>
-
-          <div className="demo-screen demo-confirm" id="demoS4">
-            <div className="demo-check-wrap" id="demoConfettiWrap">
-              <div className="demo-check"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-            </div>
-            <p className="demo-confirm-title">Rendez-vous confirmé !</p>
-            <p className="demo-confirm-sub">Réservé en moins de 2 minutes, en ligne</p>
-            <span className="demo-again" id="demoAgainBtn">Nouveau rendez-vous</span>
-          </div>
-
-          <svg className="demo-cursor" id="demoCursor" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path d="M4 2 L4 20 L9 15.5 L12.5 22 L15 20.5 L11.5 14 L18 14 Z" fill="#fff" stroke="#1B1730" stroke-width="1.3" stroke-linejoin="round"/>
-          </svg>
-          <span className="demo-click-ring" id="demoClickRing"></span>
+        <div className="ticket-placeholder" id="ticketPlaceholder">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <p>Votre confirmation de rendez-vous s'affichera ici.</p>
         </div>
-
-        <div className="ticket dw-hidden" id="realTicket">
-          <div className="ticket-top">
-            <div className="ticket-top-row">
-              <div>
-                <div className="ticket-label">Patient</div>
-                <div className="ticket-value">— à confirmer —</div>
-              </div>
-              <div>
-                <div className="ticket-label">Cabinet</div>
-                <div className="ticket-value">Dr. Haddad</div>
-              </div>
-            </div>
-          </div>
-          <div className="ticket-divider-wrap">
-            <span className="ticket-notch left"></span>
-            <span className="ticket-notch right"></span>
-          </div>
-          <div className="ticket-dashes"></div>
-          <div className="ticket-bottom">
-            <div className="ticket-service">
-              <div className="ticket-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></svg>
-              </div>
-              <div>
-                <div className="ticket-service-name">Consultation cardiologie</div>
-                <div className="ticket-service-sub">30 minutes · Cabinet 2</div>
-              </div>
-            </div>
-            <div className="ticket-meta">
-              <div className="ticket-meta-block">
-                <div className="ticket-label">Créneau</div>
-                <div className="ticket-value">Choisir une date</div>
-              </div>
-              <div className="ticket-qr">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="16" y="3" width="5" height="5" rx="1"/><rect x="3" y="16" width="5" height="5" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/><path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/><path d="M12 21v-1"/></svg>
-              </div>
-            </div>
-          </div>
-        </div>
+        <div className="ticket dw-hidden" id="realTicket"></div>
       </div>
     </div>
   </div>
@@ -1459,7 +1400,7 @@ export default function CrenoPagePublique() {
           <span className="how-step-num">3</span>
         </div>
         <p className="how-card-title">Rendez-vous confirmé</p>
-        <p className="how-card-desc">Le créneau est bloqué immédiatement et un rappel SMS est programmé.</p>
+        <p className="how-card-desc">Le créneau est bloqué immédiatement et un lien de gestion vous est remis pour le consulter ou l'annuler.</p>
       </div>
     </div>
   </section>
@@ -1473,7 +1414,7 @@ export default function CrenoPagePublique() {
         <p className="pz-sub">Depuis son téléphone, chaque patiente retrouve le calendrier du cabinet, réserve en quelques secondes et reçoit une confirmation immédiate.</p>
         <ul className="pz-list">
           <li><span className="pz-check"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Confirmation instantanée.</b> Le rendez-vous est validé en quelques secondes, sans appel ni attente.</span></li>
-          <li><span className="pz-check"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Rappel automatique.</b> Un SMS est envoyé avant chaque rendez-vous pour réduire les oublis.</span></li>
+          <li><span className="pz-check"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Gestion autonome.</b> Le lien reçu à la confirmation permet de consulter ou d'annuler le rendez-vous, sans créer de compte.</span></li>
           <li><span className="pz-check"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Pensé pour le mobile.</b> Un parcours simple et guidé, accessible depuis n'importe quel téléphone.</span></li>
           <li><span className="pz-check"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Cabinet joignable.</b> Une question avant ou après la réservation ? Le cabinet reste disponible.</span></li>
         </ul>
@@ -1492,8 +1433,8 @@ export default function CrenoPagePublique() {
           Rendez-vous confirmé
         </span>
         <span className="pz-toast" id="pzToast">
-          <span className="pz-toast-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span>
-          SMS de rappel envoyé
+          <span className="pz-toast-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          Confirmation envoyée
         </span>
       </div>
     </div>
@@ -1511,18 +1452,19 @@ export default function CrenoPagePublique() {
     </div>
     <div className="cr-trust-item">
       <div className="cr-trust-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
-      <div className="cr-trust-text">Rappel automatique<span>SMS avant votre rendez-vous</span></div>
+      <div className="cr-trust-text">Gestion autonome<span>Consultez ou annulez via votre lien</span></div>
     </div>
     <div className="cr-trust-item">
       <div className="cr-trust-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-      <div className="cr-trust-text">Assistant disponible 24/7<span>Questions sur le cabinet</span></div>
+      <div className="cr-trust-text">Assistant intégré<span>Questions sur les services et horaires</span></div>
     </div>
   </section>
 
   
   <section className="cr-section">
     <h2 className="cr-section-title display">Services disponibles</h2>
-    <p className="cr-section-sub">Sélectionnez une prestation pour voir les créneaux libres.</p>
+    <p className="cr-section-sub">Sélectionnez une prestation pour voir les créneaux réellement libres.</p>
+    <div className="pro-selector" id="proSelector"></div>
     <div className="cr-services-grid" id="services-grid"></div>
   </section>
 
@@ -1546,7 +1488,7 @@ export default function CrenoPagePublique() {
 
   
   <footer className="cr-footer">
-    <span>Dr. Yasmine Haddad — Cabinet de cardiologie, Sétif</span>
+    <span id="footerName"></span>
     <button type="button" className="cr-footer-pro-link" onClick={() => navigate('/connexion')}>Espace Pro →</button>
   </footer>
 
@@ -1576,10 +1518,10 @@ export default function CrenoPagePublique() {
         <h3 className="booking-title display">Retrouver ma réservation</h3>
       </div>
       <div className="booking-field">
-        <label>Numéro de téléphone utilisé lors de la réservation</label>
-        <input type="tel" id="lookupPhone" placeholder="06 12 34 56 78" />
+        <label>Lien de gestion reçu lors de la confirmation</label>
+        <input type="text" id="lookupToken" placeholder="https://…/rdv/…" />
       </div>
-      <div className="booking-error" id="lookupError">Merci de saisir un numéro de téléphone.</div>
+      <div className="booking-error" id="lookupError">Collez le lien reçu lors de la confirmation.</div>
       <button className="booking-btn booking-btn-primary booking-btn-full" onClick={() => (window as any).doLookup()}>Rechercher</button>
       <div id="lookupResultZone"></div>
     </div>
@@ -1590,8 +1532,14 @@ export default function CrenoPagePublique() {
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
   </button>
   <div className="assistant-panel" id="assistant-panel">
-    <h4 className="display">Assistant du cabinet</h4>
-    <p>Posez une question sur les services, les horaires ou l'adresse — je réponds à partir des informations du cabinet.</p>
+    <h4 className="display">Assistant</h4>
+    <div className="assistant-log" id="assistantLog"></div>
+    <div className="assistant-input-row">
+      <input type="text" id="assistantInput" placeholder="Votre question…" onKeyDown={(e) => { if (e.key === 'Enter') (window as any).sendAssistant(); }} />
+      <button type="button" onClick={() => (window as any).sendAssistant()} aria-label="Envoyer">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
   </div>
     </>
   );

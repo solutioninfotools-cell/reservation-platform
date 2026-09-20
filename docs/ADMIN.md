@@ -204,5 +204,5 @@ npx prisma migrate deploy
 npx prisma generate
 ```
 
-Le seed crée trois domaines de départ (Santé, Beauté et bien-être, Conseil) et
-rattache le professionnel de démonstration au premier.
+Aucun domaine n'est créé automatiquement : l'Admin les ajoute depuis
+« Domaines d'activité », puis rattache chaque professionnel au domaine voulu.

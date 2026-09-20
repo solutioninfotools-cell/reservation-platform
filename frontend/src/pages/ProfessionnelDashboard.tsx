@@ -1,7 +1,10 @@
-// @ts-nocheck -- fichier porté depuis un script JS existant (voir note en fin de réponse)
+// @ts-nocheck -- vue portée depuis un script JS existant, branchée sur l'API réelle (/api/professionnel, /api/appointments)
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth.store';
+import { professionnelApi, appointmentsApi } from '../api/professionnel.api';
+import { notificationsApi } from '../api/notifications.api';
+import { publicApi, assistantApi } from '../api/public.api';
 
 export default function ProfessionnelDashboard() {
   const navigate = useNavigate();
@@ -14,130 +17,266 @@ export default function ProfessionnelDashboard() {
       navigate('/connexion');
     }, { signal: ac.signal });
 
-    // ---- begin ported script (identique à la version HTML d'origine) ----
   /* =========================================================
-     DONNÉES (mock) — Espace Professionnel, conforme au cahier des charges
+     DONNÉES — toutes issues de l'API (aucune donnée simulée).
+     Le backend est la seule autorité : il possède le moteur de
+     créneaux, les transitions de statut et les règles de réservation.
      ========================================================= */
   const STATUS = {
-    reserve: { label: "Réservé", cls: "st-reserve", color: "#8957FF" },
-    termine: { label: "Terminé", cls: "st-termine", color: "#3FA65C" },
-    annule:  { label: "Annulé",  cls: "st-annule",  color: "#D9483C" },
+    RESERVE:       { label: "Réservé",       cls: "st-reserve",  color: "#8957FF" },
+    CLIENT_ARRIVE: { label: "Client arrivé", cls: "st-arrive",   color: "#2FA79D" },
+    EN_COURS:      { label: "En cours",      cls: "st-encours",  color: "#E2954A" },
+    TERMINE:       { label: "Terminé",       cls: "st-termine",  color: "#3FA65C" },
+    ABSENT:        { label: "Absent",        cls: "st-absent",   color: "#8A8496" },
+    ANNULE:        { label: "Annulé",        cls: "st-annule",   color: "#D9483C" },
   };
-  const ME = { id: "p1", name: "Dr. Ahmed Benali", role: "Médecin généraliste", color: "#8957FF", initials: "AB" };
-
-  // Types de champs personnalisés disponibles pour le constructeur de formulaire par service
+  // Miroir des transitions acceptées par le backend.
+  const TRANSITIONS = {
+    RESERVE: ["CLIENT_ARRIVE", "EN_COURS", "TERMINE", "ABSENT", "ANNULE"],
+    CLIENT_ARRIVE: ["EN_COURS", "TERMINE", "ANNULE"],
+    EN_COURS: ["TERMINE", "ANNULE"],
+    TERMINE: [], ABSENT: [], ANNULE: [],
+  };
+  const ORIGINE_LABELS = { EN_LIGNE: "En ligne", RECEPTIONNISTE: "Réceptionniste", PROFESSIONNEL: "Professionnel" };
+  const STATUT_SERVICE = {
+    DISPONIBLE: { label: "Disponible", cls: "st-termine" },
+    COMPLET: { label: "Complet", cls: "st-encours" },
+    INDISPONIBLE: { label: "Indisponible", cls: "st-absent" },
+  };
+  // Types de champs personnalisés — valeurs de l'enum TypeChamp du backend.
   const FIELD_TYPES = [
-    { value: "texte_court", label: "Texte court" },
-    { value: "texte_long",  label: "Texte long" },
-    { value: "nombre",      label: "Nombre" },
-    { value: "liste",       label: "Liste déroulante" },
-    { value: "radio",       label: "Boutons radio" },
-    { value: "checkbox",    label: "Cases à cocher" },
-    { value: "switch",      label: "Oui / Non" },
-    { value: "date",        label: "Date" },
-    { value: "fichier",     label: "Upload fichier / photo" },
+    { value: "TEXTE",      label: "Texte court" },
+    { value: "TEXTE_LONG", label: "Texte long" },
+    { value: "NOMBRE",     label: "Nombre" },
+    { value: "SELECTION",  label: "Liste déroulante" },
+    { value: "RADIO",      label: "Boutons radio" },
+    { value: "CHECKBOX",   label: "Cases à cocher" },
+    { value: "SWITCH",     label: "Oui / Non" },
+    { value: "DATE",       label: "Date" },
+    { value: "FICHIER",    label: "Upload fichier / photo" },
   ];
-  const HAS_OPTIONS_TYPES = ["liste", "radio", "checkbox"];
+  const HAS_OPTIONS_TYPES = ["SELECTION", "RADIO", "CHECKBOX"];
+  const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+  const TYPES_INDISPO = { CRENEAU: "Créneau", JOURNEE: "Journée", PERIODE: "Période" };
+  const NOTIF_STYLE = {
+    NOUVELLE_RESERVATION:    { bg: "#F1ECFF", color: "#8957FF", svg: '<path d="M12 5v14M5 12h14"/>' },
+    ANNULATION:              { bg: "#FDEDEC", color: "#D9483C", svg: '<circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>' },
+    MODIFICATION:            { bg: "#FDF1E2", color: "#E2954A", svg: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>' },
+    CHANGEMENT_STATUT:       { bg: "#FDF1E2", color: "#E2954A", svg: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>' },
+    CONFLIT_PLANNING:        { bg: "#FDF1E2", color: "#E2954A", svg: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>' },
+    RAPPEL:                  { bg: "#E6F7F5", color: "#2FA79D", svg: '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/>' },
+    AFFECTATION:             { bg: "#E6F7F5", color: "#2FA79D", svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>' },
+    AUTORISATIONS_MODIFIEES: { bg: "#F1ECFF", color: "#8957FF", svg: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>' },
+    PROFESSIONNEL_ABSENT:    { bg: "#EEEDF2", color: "#8A8496", svg: '<circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>' },
+    COMPTE_VALIDE:           { bg: "#E9F7ED", color: "#3FA65C", svg: '<polyline points="20 6 9 17 4 12"/>' },
+    COMPTE_REFUSE:           { bg: "#FDEDEC", color: "#D9483C", svg: '<circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>' },
+  };
+  const NOTIF_FALLBACK = { bg: "#EEEDF2", color: "#8A8496", svg: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' };
 
-  window.todayISO = function todayISO() { return new Date().toISOString().slice(0, 10); }
-  window.isoPlusDays = function isoPlusDays(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+  let ME = { id: "", name: "", role: "", email: "", color: "#8957FF", initials: "" };
+  let PROFILE = { nom: "", specialite: "", description: "", adresse: "", telephone: "", email: "", photoUrl: "" };
+  let SERVICES = [];
+  let CHAMPS = [];         // champs personnalisés, tous services confondus
+  let APPTS = [];
+  let CLIENTS = [];        // fiches clients réelles renvoyées par l'API
+  let NOTES = [];          // notes internes réelles
+  let RECEPTIONNISTES = [];
+  let DISPOS = [];         // disponibilités hebdomadaires (lignes de la base)
+  let INDISPOS = [];
+  let PARAMS = null;
+  let STATS = null;
+  let NOTIFS = [];
+
+  window.todayISO = function todayISO() {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+  window.isoPlusDays = function isoPlusDays(iso, n) {
+    const d = new Date(iso + "T00:00:00");
+    d.setDate(d.getDate() + n);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
   const TODAY = todayISO();
-  let uidCounter = 100;
-  window.uid = function uid(p) { return (p || "id") + (uidCounter++); }
-
-  let SERVICES = [
-    { id: "s1", name: "Consultation générale", desc: "Consultation médicale standard", duration: 30, price: 3000, status: "active", customFields: [] },
-    { id: "s2", name: "Suivi chronique", desc: "Suivi d'une pathologie chronique", duration: 30, price: 2500, status: "active", customFields: [] },
-    { id: "s3", name: "Certificat médical", desc: "Délivrance d'un certificat", duration: 15, price: 1500, status: "active", customFields: [] },
-    { id: "s4", name: "Consultation à domicile", desc: "Déplacement au domicile du patient", duration: 45, price: 5000, status: "inactive", customFields: [
-      { id: "cf1", label: "Adresse précise du domicile", type: "texte_long", required: true, options: [], defaultValue: "", helpText: "Étage, code d'accès, repères utiles", conditions: [], conditionLogic: "ET" },
-      { id: "cf2", label: "Consultation remboursée ?", type: "switch", required: false, options: [], defaultValue: "non", helpText: "", conditions: [], conditionLogic: "ET" },
-      { id: "cf3", label: "Upload ordonnance", type: "fichier", required: true, options: [], defaultValue: "", helpText: "Formats acceptés : PDF, JPG", conditions: [{ fieldId: "cf2", value: "oui" }], conditionLogic: "ET" },
-    ] },
-  ];
-
-  let APPTS = [
-    { id: uid("a"), client: "Yasmine Hadj", phone: "0555 12 34 66", dob: "1990-04-12", email: "yasmine.hadj@mail.com", service: "Consultation générale", date: TODAY, start: "09:00", end: "09:30", status: "reserve", remark: "", createdAt: "2026-08-24", source: "en ligne" },
-    { id: uid("a"), client: "Karim Yacine", phone: "0555 22 33 44", dob: "1988-09-14", email: "karim.y@mail.com", service: "Consultation générale", date: TODAY, start: "11:00", end: "11:30", status: "reserve", remark: "", createdAt: "2026-08-26", source: "réceptionniste" },
-    { id: uid("a"), client: "Meriem Salhi", phone: "0555 43 21 09", dob: "1991-06-06", email: "meriem.s@mail.com", service: "Suivi chronique", date: TODAY, start: "14:00", end: "14:30", status: "reserve", remark: "", createdAt: "2026-08-23", source: "en ligne" },
-    { id: uid("a"), client: "Linda Cherif", phone: "0555 66 77 88", dob: "1999-04-04", email: "linda.c@mail.com", service: "Certificat médical", date: TODAY, start: "17:00", end: "17:15", status: "reserve", remark: "", createdAt: "2026-08-27", source: "en ligne" },
-    { id: uid("a"), client: "Yasmine Hadj", phone: "0555 12 34 66", dob: "1990-04-12", email: "yasmine.hadj@mail.com", service: "Consultation générale", date: isoPlusDays(TODAY, -2), start: "09:00", end: "09:30", status: "termine", remark: "", createdAt: isoPlusDays(TODAY, -10), source: "en ligne" },
-    { id: uid("a"), client: "Karim Yacine", phone: "0555 22 33 44", dob: "1988-09-14", email: "karim.y@mail.com", service: "Consultation générale", date: isoPlusDays(TODAY, -14), start: "09:00", end: "09:30", status: "termine", remark: "", createdAt: isoPlusDays(TODAY, -20), source: "réceptionniste" },
-    { id: uid("a"), client: "Sarah Medjdoub", phone: "0553 45 67 89", dob: "1998-07-30", email: "sarah.m@mail.com", service: "Suivi chronique", date: isoPlusDays(TODAY, -1), start: "10:00", end: "10:30", status: "termine", remark: "", createdAt: isoPlusDays(TODAY, -6), source: "en ligne" },
-    { id: uid("a"), client: "Amel Bensalem", phone: "0555 88 77 66", dob: "2001-05-17", email: "amel.b@mail.com", service: "Certificat médical", date: isoPlusDays(TODAY, -3), start: "12:00", end: "12:15", status: "annule", remark: "Erreur de réservation", createdAt: isoPlusDays(TODAY, -5), source: "en ligne" },
-    { id: uid("a"), client: "Meriem Salhi", phone: "0555 43 21 09", dob: "1991-06-06", email: "meriem.s@mail.com", service: "Suivi chronique", date: isoPlusDays(TODAY, 1), start: "10:00", end: "10:30", status: "reserve", remark: "", createdAt: TODAY, source: "en ligne" },
-    { id: uid("a"), client: "Hamza Belkhir", phone: "0555 65 43 21", dob: "1967-08-21", email: "hamza.b@mail.com", service: "Consultation générale", date: isoPlusDays(TODAY, 2), start: "09:30", end: "10:00", status: "reserve", remark: "", createdAt: TODAY, source: "réceptionniste" },
-  ];
-
-  let NOTES = {}; // clientName -> [{id, text, date}]
-
-  let RECEPTIONNISTES = [
-    { id: "r1", name: "Imane B.", email: "imane.b@rendezvousapp.com", phone: "0555 90 10 20", active: true, perms: { agenda: true, gererRdv: true, gererPlanning: true, gererParametres: false } },
-    { id: "r2", name: "Feriel N.", email: "feriel.n@rendezvousapp.com", phone: "0555 40 50 60", active: false, perms: { agenda: true, gererRdv: false, gererPlanning: false, gererParametres: false } },
-  ];
-
-  let AVAILABILITY = {
-    Lundi:    { on: true,  ranges: [{start:"09:00", end:"12:00"}, {start:"14:00", end:"17:00"}] },
-    Mardi:    { on: true,  ranges: [{start:"10:00", end:"18:00"}] },
-    Mercredi: { on: false, ranges: [] },
-    Jeudi:    { on: true,  ranges: [{start:"09:00", end:"16:00"}] },
-    Vendredi: { on: false, ranges: [] },
-    Samedi:   { on: true,  ranges: [{start:"09:00", end:"13:00"}] },
-    Dimanche: { on: false, ranges: [] },
-  };
-
-  let INDISPOS = [
-    { id: uid("i"), type: "jour", start: isoPlusDays(TODAY, 6), end: isoPlusDays(TODAY, 6), motif: "Congé", notified: true },
-  ];
-
-  let PARAMS = {
-    minGap: 10, minLead: 2, maxLead: 90, absenceThreshold: 2, maxRdvPerClientDay: 1,
-  };
-
-  let PROFILE = {
-    name: "Dr. Ahmed Benali", desc: "Médecin généraliste — cabinet ouvert du lundi au samedi, consultations sur rendez-vous.",
-    address: "12 rue des Frères Bouadou, Sétif", phone: "0555 10 20 30", email: "ahmed.benali@rendezvousapp.com",
-  };
-
-  let NOTIFS = [
-    { id: 1, type: "new", text: "Nouvelle réservation en ligne — <b>Hamza Belkhir</b> le " + isoPlusDays(TODAY,2), time: "Il y a 20 min", unread: true },
-    { id: 2, type: "cancel", text: "<b>Amel Bensalem</b> a annulé son rendez-vous du " + isoPlusDays(TODAY,-3), time: "Il y a 1 h", unread: true },
-    { id: 3, type: "agenda", text: "Modification dans l'agenda par votre réceptionniste Imane B.", time: "Il y a 2 h", unread: true },
-    { id: 4, type: "receptionniste", text: "Nouvelle réceptionniste affectée par l'Admin : <b>Feriel N.</b>", time: "Hier", unread: false },
-    { id: 5, type: "perms", text: "Autorisations mises à jour pour <b>Imane B.</b>", time: "Hier", unread: false },
-  ];
-  const NOTIF_ICONS = {
-    new: { bg: "#F1ECFF", color: "#8957FF", svg: '<path d="M12 5v14M5 12h14"/>' },
-    cancel: { bg: "#FDEDEC", color: "#D9483C", svg: '<circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>' },
-    agenda: { bg: "#FDF1E2", color: "#E2954A", svg: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>' },
-    receptionniste: { bg: "#E6F7F5", color: "#2FA79D", svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>' },
-    perms: { bg: "#F1ECFF", color: "#8957FF", svg: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>' },
-  };
 
   let state = {
-    page: "dashboard", agendaView: "day", agendaDate: TODAY, monthCursor: TODAY.slice(0,7),
+    page: "dashboard", agendaView: "day", agendaDate: TODAY, monthCursor: TODAY.slice(0, 7),
     rdvFilters: { status: "", search: "" },
     clientsView: "list", clientsFilters: { search: "", upcoming: "" },
-    servicesView: "grid", servicesFilters: { search: "", status: "" },
+    servicesView: "grid", servicesFilters: { search: "", actif: "" },
     receptionnistesView: "list", receptionnistesFilters: { search: "", status: "" },
     dispoIndispoOpen: false,
+    newRdv: { serviceId: "", date: "", start: "", dateDebut: "", creneaux: [] },
   };
 
-  // Brouillon de travail pour le constructeur de champs personnalisés d'un service
-  let CF_DRAFT = [];
+  // Brouillon du constructeur de champs personnalisés
   let CF_SERVICE_ID = null;
   let CF_EDIT_DRAFT = null;
 
-  window.fmtDateLong = function fmtDateLong(iso) { const d = new Date(iso + "T00:00:00"); return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
-  window.fmtDateShort = function fmtDateShort(iso) { const d = new Date(iso + "T00:00:00"); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); }
+  /* =========================================================
+     UTILITAIRES
+     ========================================================= */
+  window.esc = function esc(value) {
+    if (value === null || value === undefined) return "";
+    return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  window.escArg = function escArg(value) {
+    const str = value === null || value === undefined ? "" : String(value);
+    return esc(str.replace(/\\/g, "\\\\").replace(/'/g, "\\'"));
+  }
+  window.toDay = function toDay(value) {
+    if (!value) return "";
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? "" : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+  window.toHM = function toHM(value) {
+    if (!value) return "";
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? "" : String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+  window.fmtDateLong = function fmtDateLong(iso) {
+    const d = new Date(iso + "T00:00:00");
+    return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  }
+  window.fmtDateShort = function fmtDateShort(value) {
+    if (!value) return "—";
+    const d = String(value).length === 10 ? new Date(value + "T00:00:00") : new Date(value);
+    return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+  window.fmtRelative = function fmtRelative(value) {
+    if (!value) return "—";
+    const min = Math.floor((Date.now() - new Date(value).getTime()) / 60000);
+    if (min < 1) return "À l'instant";
+    if (min < 60) return `Il y a ${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `Il y a ${h} h`;
+    const j = Math.floor(h / 24);
+    if (j === 1) return "Hier";
+    if (j < 31) return `Il y a ${j} j`;
+    return fmtDateShort(value);
+  }
   window.capitalize = function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-  window.calcAge = function calcAge(dob) { const d = new Date(dob); const now = new Date(); let age = now.getFullYear()-d.getFullYear(); if (now.getMonth()<d.getMonth()||(now.getMonth()===d.getMonth()&&now.getDate()<d.getDate())) age--; return age; }
-  window.initials = function initials(name) { return name.split(" ").map((w) => w[0]).slice(0,2).join("").toUpperCase(); }
+  window.calcAge = function calcAge(dob) {
+    if (!dob) return null;
+    const d = new Date(dob);
+    if (Number.isNaN(d.getTime())) return null;
+    const now = new Date();
+    let age = now.getFullYear() - d.getFullYear();
+    if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--;
+    return age;
+  }
+  window.initials = function initials(name) {
+    return (name || "?").trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  }
+  // Le prix est stocké en centimes côté base.
+  window.fmtPrix = function fmtPrix(centimes) {
+    return centimes === null || centimes === undefined ? "—" : (centimes / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " DA";
+  }
+  window.val = function val(id) { return (document.getElementById(id)?.value || "").trim(); }
+  window.setText = function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
   window.showToast = function showToast(msg) {
     const t = document.getElementById("toast");
     if (!t) return;
-    t.innerHTML = msg; t.classList.add("show");
-    clearTimeout(showToast._t); showToast._t = setTimeout(() => t.classList.remove("show"), 2600);
+    t.innerHTML = msg;
+    t.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => t.classList.remove("show"), 2600);
+  }
+  window.showError = function showError(err) {
+    const msg = err?.response?.data?.message || err?.message || "Une erreur est survenue.";
+    showToast(esc(Array.isArray(msg) ? msg.join(", ") : msg));
+  }
+
+  /* =========================================================
+     CHARGEMENT DES DONNÉES
+     ========================================================= */
+  const mapAppt = (r) => ({
+    id: r.id,
+    date: toDay(r.dateDebut),
+    start: toHM(r.dateDebut),
+    end: toHM(r.dateFin),
+    dateDebut: r.dateDebut,
+    clientId: r.clientId,
+    client: `${r.client?.prenom || ""} ${r.client?.nom || ""}`.trim() || "—",
+    phone: r.client?.telephone || "—",
+    email: r.client?.email || "",
+    dob: r.client?.dateNaissance ? toDay(r.client.dateNaissance) : "",
+    service: r.service?.nom || "—",
+    serviceId: r.serviceId,
+    status: r.statut,
+    remark: r.remarque || "",
+    motif: r.motifAnnulation || "",
+    source: ORIGINE_LABELS[r.origine] || r.origine,
+    createdAt: r.createdAt,
+  });
+  const mapClient = (c) => ({
+    id: c.id,
+    name: `${c.prenom || ""} ${c.nom || ""}`.trim() || "—",
+    phone: c.telephone || "—",
+    email: c.email || "",
+    dob: c.dateNaissance ? toDay(c.dateNaissance) : "",
+  });
+  const mapNotif = (n) => ({ id: n.id, type: n.type, text: esc(n.message), time: fmtRelative(n.createdAt), unread: !n.lu });
+
+  window.loadAll = async function loadAll() {
+    try {
+      const [moi, services, champs, clients, notes, dispos, indispos, params, receptionnistes, stats, notifs] = await Promise.all([
+        professionnelApi.moi(),
+        professionnelApi.listServices(),
+        professionnelApi.listChamps(),
+        professionnelApi.listClients(),
+        professionnelApi.listNotes(),
+        professionnelApi.listDisponibilites(),
+        professionnelApi.listIndisponibilites(),
+        professionnelApi.getParametres(),
+        professionnelApi.listReceptionnistes(),
+        professionnelApi.stats(),
+        notificationsApi.list(),
+      ]);
+      ME = { id: moi.id, name: moi.nom, role: moi.specialite || "—", email: moi.email, color: "#8957FF", initials: initials(moi.nom) };
+      // Barre du haut : identité du compte connecté, jamais une valeur en dur.
+      setText("tbAvatar", ME.initials);
+      setText("tbUserName", ME.name);
+      setText("tbUserRole", moi.specialite ? `Professionnel · ${moi.specialite}` : "Professionnel");
+      PROFILE = {
+        nom: moi.nom || "", specialite: moi.specialite || "", description: moi.description || "",
+        adresse: moi.adresse || "", telephone: moi.telephone || "", email: moi.email || "", photoUrl: moi.photoUrl || "",
+      };
+      SERVICES = services;
+      CHAMPS = champs;
+      CLIENTS = clients.map(mapClient);
+      NOTES = notes;
+      DISPOS = dispos;
+      INDISPOS = indispos;
+      PARAMS = params;
+      RECEPTIONNISTES = receptionnistes.map((a) => ({
+        affectationId: a.id,
+        id: a.receptionniste.id,
+        name: a.receptionniste.nom,
+        email: a.receptionniste.user?.email || "—",
+        phone: a.receptionniste.telephone || "—",
+        active: a.actif,
+        perms: {
+          peutConsulterAgenda: a.peutConsulterAgenda,
+          peutGererRdv: a.peutGererRdv,
+          peutGererPlanning: a.peutGererPlanning,
+          peutGererParametres: a.peutGererParametres,
+        },
+      }));
+      STATS = stats;
+      NOTIFS = notifs.map(mapNotif);
+      // Les rendez-vous ne peuvent être demandés qu'une fois l'identifiant du
+      // professionnel connu : le backend scope la liste à ce professionnel.
+      APPTS = (await appointmentsApi.list({ professionnelId: ME.id })).map(mapAppt);
+      return true;
+    } catch (e) { showError(e); return false; }
+  }
+  window.refreshAll = async function refreshAll(silencieux) {
+    const ok = await loadAll();
+    renderPage(state.page);
+    if (ok && !silencieux) showToast("Données actualisées");
+  }
+  window.champsDuService = function champsDuService(serviceId) {
+    return CHAMPS.filter((c) => c.serviceId === serviceId).sort((a, b) => (a.ordre - b.ordre) || String(a.createdAt).localeCompare(String(b.createdAt)));
   }
 
   /* =========================================================
@@ -161,6 +300,7 @@ export default function ProfessionnelDashboard() {
 
   window.renderPage = function renderPage(page) {
     try {
+      renderPageHead(page);
       if (page === "dashboard") renderDashboard();
       else if (page === "agenda") renderAgenda();
       else if (page === "rdv") renderRdvPage();
@@ -180,10 +320,9 @@ export default function ProfessionnelDashboard() {
   }
   window.updateNotifBadges = function updateNotifBadges() {
     const n = NOTIFS.filter((x) => x.unread).length;
-    const navBadge = document.getElementById("navNotifBadge");
-    if (navBadge) { navBadge.textContent = n; navBadge.style.display = n ? "inline-block" : "none"; }
-    const tbDot = document.getElementById("tbNotifDot");
-    if (tbDot) { tbDot.textContent = n; tbDot.style.display = n ? "flex" : "none"; }
+    const set = (id, display) => { const el = document.getElementById(id); if (!el) return; el.textContent = n; el.style.display = n ? display : "none"; };
+    set("navNotifBadge", "inline-block");
+    set("tbNotifDot", "flex");
   }
 
   /* =========================================================
@@ -208,20 +347,21 @@ export default function ProfessionnelDashboard() {
   window.iconBot = function iconBot() { return svg('<rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="8.5" cy="16" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="16" r="1.2" fill="currentColor" stroke="none"/><path d="M12 11V7"/><circle cx="12" cy="5" r="2"/>'); }
   window.iconGrid = function iconGrid() { return svg('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>', 14); }
   window.iconList = function iconList() { return svg('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>', 14); }
+  window.iconRefresh = function iconRefresh() { return svg('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', 14); }
 
   /* =========================================================
-     EN-TÊTE DE PAGE UNIQUE (évite de répéter le titre dans chaque écran)
+     EN-TÊTE DE PAGE UNIQUE
      ========================================================= */
   const PAGE_META = {
-    dashboard: { title: () => `Bonjour, ${ME.name.replace('Dr. ','')}`, sub: () => `Voici un résumé de votre activité aujourd'hui — ${fmtDateLong(TODAY)}`, action: { label: "Nouveau rendez-vous", onClick: "openNewRdv()", icon: true } },
+    dashboard: { title: () => ME.name ? `Bonjour, ${ME.name.replace(/^Dr\.\s*/, "")}` : "Tableau de bord", sub: () => `Voici un résumé de votre activité aujourd'hui — ${fmtDateLong(TODAY)}`, action: { label: "Nouveau rendez-vous", onClick: "openNewRdv()", icon: true } },
     agenda: { title: "Agenda", sub: "Vues par jour, semaine ou mois — cliquez un rendez-vous pour le consulter", action: { label: "Nouveau rendez-vous", onClick: "openNewRdv()", icon: true } },
-    rdv: { title: "Réservations", sub: "Organisées par état — Réservé, Terminé, Annulé", action: { label: "Nouveau rendez-vous", onClick: "openNewRdv()", icon: true } },
+    rdv: { title: "Réservations", sub: "Toutes vos réservations, filtrables par état", action: { label: "Nouveau rendez-vous", onClick: "openNewRdv()", icon: true } },
     clients: { title: "Clients", sub: "Clients associés à votre activité" },
     services: { title: "Services", sub: "Gérez les services proposés à vos clients", action: { label: "Ajouter un service", onClick: "openServiceForm()", icon: true } },
-    dispo: { title: "Disponibilités", sub: "Jours, horaires et créneaux disponibles" },
+    dispo: { title: "Disponibilités", sub: "Jours, horaires et périodes fermées — utilisés par le moteur de créneaux" },
     receptionnistes: { title: "Réceptionnistes", sub: "Gérez les réceptionnistes qui vous sont affectées et leurs autorisations" },
-    stats: { title: "Statistiques", sub: "Activité globale — toutes périodes confondues" },
-    assistant: { title: "Assistant IA", sub: "Personnalisé selon votre activité, vos services, votre planning et vos clients" },
+    stats: { title: "Statistiques", sub: "Activité réelle, calculée par le serveur" },
+    assistant: { title: "Assistant", sub: "Réponses fondées sur les données de votre espace" },
     notifs: { title: "Notifications", sub: "Nouvelles réservations, annulations, modifications d'agenda…", action: { label: "Tout marquer comme lu", onClick: "markAllRead()", ghost: true } },
     profil: { title: "Profil professionnel", sub: "Ces informations apparaissent sur votre page publique de réservation" },
   };
@@ -245,48 +385,51 @@ export default function ProfessionnelDashboard() {
      PAGE : TABLEAU DE BORD
      ========================================================= */
   window.renderDashboard = function renderDashboard() {
-    const todays = APPTS.filter((a) => a.date === TODAY && a.status !== "annule");
-    const upcoming = APPTS.filter((a) => a.date > TODAY && a.status === "reserve").sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start)).slice(0,4);
-    const termines = APPTS.filter((a) => a.status === "termine").length;
-    const clientsCount = new Set(APPTS.map((a) => a.client)).size;
-    const activeServices = SERVICES.filter((s) => s.status === "active").length;
+    const todays = APPTS.filter((a) => a.date === TODAY && a.status !== "ANNULE");
+    const upcoming = APPTS.filter((a) => a.date > TODAY && a.status === "RESERVE");
+    const s = STATS || {};
 
     const statCards = [
       { label: "Rendez-vous aujourd'hui", value: todays.length, icon: iconCal(), bg: "#F1ECFF", color: "#8957FF" },
       { label: "Prochains rendez-vous", value: upcoming.length, icon: iconClock(), bg: "#FDF1E2", color: "#E2954A" },
-      { label: "Rendez-vous terminés", value: termines, icon: iconCheckCircle(), bg: "#E9F7ED", color: "#3FA65C" },
-      { label: "Clients", value: clientsCount, icon: iconUsers(), bg: "#E6F7F5", color: "#2FA79D" },
-      { label: "Services actifs", value: activeServices, icon: iconCheck(), bg: "#EEEDF2", color: "#8A8496" },
+      { label: "Rendez-vous terminés", value: s.termines ?? 0, icon: iconCheckCircle(), bg: "#E9F7ED", color: "#3FA65C" },
+      { label: "Clients", value: s.nbClients ?? 0, icon: iconUsers(), bg: "#E6F7F5", color: "#2FA79D" },
+      { label: "Services publiés", value: s.servicesActifs ?? 0, icon: iconCheck(), bg: "#EEEDF2", color: "#8A8496" },
     ];
     const quickLinks = [
-      ["agenda","Agenda",iconCal()], ["rdv","Réservations",iconCheck()], ["clients","Clients",iconUsers()],
-      ["services","Services",iconCheck()], ["dispo","Disponibilités",iconClock()], ["receptionnistes","Réceptionnistes",iconUsers()], ["stats","Statistiques",iconCheckCircle()],
+      ["agenda", "Agenda", iconCal()], ["rdv", "Réservations", iconCheck()], ["clients", "Clients", iconUsers()],
+      ["services", "Services", iconCheck()], ["dispo", "Disponibilités", iconClock()], ["receptionnistes", "Réceptionnistes", iconUsers()], ["stats", "Statistiques", iconCheckCircle()],
     ];
+    const planning = todays.slice().sort((a, b) => a.start.localeCompare(b.start));
 
     document.getElementById("page-dashboard").innerHTML = `
+      ${DISPOS.length ? "" : `<div class="card" style="background:#FDF1E2;border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
+        ${iconAlert()} Aucune disponibilité définie : vos clients ne peuvent pas encore réserver.
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="goToPage('dispo')">Définir mes horaires</button>
+      </div>`}
       <div class="stat-grid">
-        ${statCards.map((s) => `<div class="stat-card"><div class="stat-icon" style="background:${s.bg};color:${s.color}">${s.icon}</div><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join("")}
+        ${statCards.map((c) => `<div class="stat-card"><div class="stat-icon" style="background:${c.bg};color:${c.color}">${c.icon}</div><div class="stat-value">${c.value}</div><div class="stat-label">${c.label}</div></div>`).join("")}
       </div>
       <div class="dash-grid">
         <div class="card">
           <div class="card-head"><h3>Planning du jour</h3><button class="btn btn-ghost btn-sm" onclick="goToPage('agenda')">Voir l'agenda</button></div>
-          ${todays.length ? todays.sort((a,b)=>a.start.localeCompare(b.start)).map((a) => `
+          ${planning.length ? planning.map((a) => `
             <div class="dash-list-row">
-              <span class="dash-list-time">${a.start}</span>
-              <div style="flex:1"><div class="dash-list-name">${a.client}</div><div class="dash-list-sub">${a.service}</div></div>
+              <span class="dash-list-time">${esc(a.start)}</span>
+              <div style="flex:1"><div class="dash-list-name">${esc(a.client)}</div><div class="dash-list-sub">${esc(a.service)}</div></div>
               <span class="status-pill ${STATUS[a.status].cls}">${STATUS[a.status].label}</span>
             </div>`).join("") : `<div class="table-empty">Aucun rendez-vous aujourd'hui</div>`}
         </div>
         <div>
           <div class="card" style="margin-bottom:14px;">
-            <div class="card-head"><h3>Accès rapide</h3></div>
+            <div class="card-head"><h3>Accès rapide</h3><button class="btn btn-ghost btn-sm" onclick="refreshAll()">${iconRefresh()} Actualiser</button></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:16px;">
-              ${quickLinks.map(([p,l,ic]) => `<button class="btn btn-ghost btn-sm" style="justify-content:flex-start;" onclick="goToPage('${p}')">${ic} ${l}</button>`).join("")}
+              ${quickLinks.map((q) => `<button class="btn btn-ghost btn-sm" style="justify-content:flex-start;" onclick="goToPage('${q[0]}')">${q[2]} ${q[1]}</button>`).join("")}
             </div>
           </div>
           <div class="card">
             <div class="card-head"><h3>Notifications récentes</h3><button class="btn btn-ghost btn-sm" onclick="goToPage('notifs')">Tout voir</button></div>
-            ${NOTIFS.slice(0,3).map((n) => notifRowHtml(n)).join("")}
+            ${NOTIFS.length ? NOTIFS.slice(0, 3).map((n) => notifRowHtml(n)).join("") : `<div class="table-empty">Aucune notification</div>`}
           </div>
         </div>
       </div>
@@ -302,9 +445,9 @@ export default function ProfessionnelDashboard() {
         <div class="date-nav"><button onclick="agendaShift(-1)">${iconChevronLeft()}</button><span class="date-nav-label">${agendaDateLabel()}</span><button onclick="agendaShift(1)">${iconChevronRight()}</button></div>
         <button class="btn btn-ghost btn-sm" onclick="agendaToday()">Aujourd'hui</button>
         <div class="view-toggle" style="margin-left:auto">
-          <button class="${state.agendaView==='day'?'active':''}" onclick="setAgendaView('day')">Jour</button>
-          <button class="${state.agendaView==='week'?'active':''}" onclick="setAgendaView('week')">Semaine</button>
-          <button class="${state.agendaView==='month'?'active':''}" onclick="setAgendaView('month')">Mois</button>
+          <button class="${state.agendaView === 'day' ? 'active' : ''}" onclick="setAgendaView('day')">Jour</button>
+          <button class="${state.agendaView === 'week' ? 'active' : ''}" onclick="setAgendaView('week')">Semaine</button>
+          <button class="${state.agendaView === 'month' ? 'active' : ''}" onclick="setAgendaView('month')">Mois</button>
         </div>
       </div>
       <div class="agenda-body">
@@ -313,7 +456,7 @@ export default function ProfessionnelDashboard() {
           ${miniCalHtml()}
           <div class="card" style="margin-top:14px;padding:14px 16px;">
             <div style="font-size:12px;font-weight:700;margin-bottom:10px;">Légende</div>
-            <div class="legend-row">${Object.entries(STATUS).map(([k,v]) => `<span class="legend-item"><span class="legend-dot" style="background:${v.color}"></span>${v.label}</span>`).join("")}</div>
+            <div class="legend-row">${Object.entries(STATUS).map(([, v]) => `<span class="legend-item"><span class="legend-dot" style="background:${v.color}"></span>${v.label}</span>`).join("")}</div>
           </div>
         </div>
       </div>
@@ -322,21 +465,29 @@ export default function ProfessionnelDashboard() {
   }
   window.agendaDateLabel = function agendaDateLabel() {
     if (state.agendaView === "day") return capitalize(fmtDateLong(state.agendaDate));
-    if (state.agendaView === "week") { const start = weekStart(state.agendaDate); return fmtDateShort(start) + " – " + fmtDateShort(isoPlusDays(start,6)); }
+    if (state.agendaView === "week") { const start = weekStart(state.agendaDate); return fmtDateShort(start) + " – " + fmtDateShort(isoPlusDays(start, 6)); }
     const d = new Date(state.monthCursor + "-01T00:00:00");
     return capitalize(d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }));
   }
-  window.weekStart = function weekStart(iso) { const d = new Date(iso + "T00:00:00"); const day = (d.getDay()+6)%7; d.setDate(d.getDate()-day); return d.toISOString().slice(0,10); }
+  window.weekStart = function weekStart(iso) {
+    const d = new Date(iso + "T00:00:00");
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
   window.agendaShift = function agendaShift(dir) {
     if (state.agendaView === "day") state.agendaDate = isoPlusDays(state.agendaDate, dir);
-    else if (state.agendaView === "week") state.agendaDate = isoPlusDays(state.agendaDate, dir*7);
-    else { const d = new Date(state.monthCursor+"-01T00:00:00"); d.setMonth(d.getMonth()+dir); state.monthCursor = d.toISOString().slice(0,7); }
+    else if (state.agendaView === "week") state.agendaDate = isoPlusDays(state.agendaDate, dir * 7);
+    else {
+      const d = new Date(state.monthCursor + "-01T00:00:00");
+      d.setMonth(d.getMonth() + dir);
+      state.monthCursor = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 7);
+    }
     renderAgenda();
   }
-  window.agendaToday = function agendaToday() { state.agendaDate = TODAY; state.monthCursor = TODAY.slice(0,7); renderAgenda(); }
+  window.agendaToday = function agendaToday() { state.agendaDate = TODAY; state.monthCursor = TODAY.slice(0, 7); renderAgenda(); }
   window.setAgendaView = function setAgendaView(v) { state.agendaView = v; renderAgenda(); }
 
-  const HOURS = Array.from({length:11}, (_,i) => 8+i);
+  const HOURS = Array.from({ length: 11 }, (_, i) => 8 + i);
   window.renderAgendaMain = function renderAgendaMain() {
     const el = document.getElementById("agendaMain");
     if (!el) return;
@@ -345,7 +496,7 @@ export default function ProfessionnelDashboard() {
     else el.innerHTML = monthViewHtml();
   }
   window.dayViewHtml = function dayViewHtml() {
-    let head = `<div class="day-grid-head" style="grid-template-columns:44px 1fr"><div></div><div class="day-col-head"><div class="avatar-sm" style="background:${ME.color};margin:0 auto 4px;">${ME.initials}</div><div class="day-col-head-name">${ME.name}</div><div class="day-col-head-role">${ME.role}</div></div></div>`;
+    const head = `<div class="day-grid-head" style="grid-template-columns:44px 1fr"><div></div><div class="day-col-head"><div class="avatar-sm" style="background:${ME.color};margin:0 auto 4px;">${esc(ME.initials)}</div><div class="day-col-head-name">${esc(ME.name)}</div><div class="day-col-head-role">${esc(ME.role)}</div></div></div>`;
     let body = `<div class="day-grid-body" style="grid-template-columns:44px 1fr">`;
     HOURS.forEach((h) => { body += `<div class="hour-label">${h}:00</div><div class="day-col" data-hour="${h}" onclick="handleDayColClick(event,${h})"></div>`; });
     body += `</div>`;
@@ -357,66 +508,74 @@ export default function ProfessionnelDashboard() {
     const col = grid.querySelectorAll(".day-col")[0];
     if (!col) return;
     const rowH = col.offsetHeight || 46;
-    const dayAppts = APPTS.filter((a) => a.date === state.agendaDate && a.status !== "annule");
+    const jour = APPTS.filter((a) => a.date === state.agendaDate && a.status !== "ANNULE");
     col.style.position = "relative";
-    dayAppts.forEach((a) => {
-      const [sh,sm] = a.start.split(":").map(Number); const [eh,em] = a.end.split(":").map(Number);
-      const startMin = (sh-HOURS[0])*60+sm; const durMin = Math.max(20,(eh*60+em)-(sh*60+sm));
-      const top = (startMin/60)*rowH; const height = (durMin/60)*rowH - 4;
+    jour.forEach((a) => {
+      const [sh, sm] = a.start.split(":").map(Number);
+      const [eh, em] = a.end.split(":").map(Number);
+      const startMin = (sh - HOURS[0]) * 60 + sm;
+      const durMin = Math.max(20, (eh * 60 + em) - (sh * 60 + sm));
       const block = document.createElement("div");
       block.className = "appt-block";
-      block.style.top = top+"px"; block.style.height = Math.max(24,height)+"px";
-      block.style.background = STATUS[a.status].color+"22"; block.style.borderLeftColor = STATUS[a.status].color; block.style.color = "#1B1730";
-      block.innerHTML = `<b>${a.client}</b><span>${a.start} · ${a.service}</span>`;
+      block.style.top = (startMin / 60) * rowH + "px";
+      block.style.height = Math.max(24, (durMin / 60) * rowH - 4) + "px";
+      block.style.background = STATUS[a.status].color + "22";
+      block.style.borderLeftColor = STATUS[a.status].color;
+      block.style.color = "#1B1730";
+      block.innerHTML = `<b>${esc(a.client)}</b><span>${esc(a.start)} · ${esc(a.service)}</span>`;
       block.onclick = (e) => { e.stopPropagation(); openRdvDetail(a.id); };
       col.appendChild(block);
     });
   }
-  window.handleDayColClick = function handleDayColClick(e, hour) { if (e.target.closest(".appt-block")) return; openNewRdv({date: state.agendaDate, start: hour+":00"}); }
+  window.handleDayColClick = function handleDayColClick(e, hour) {
+    if (e.target.closest(".appt-block")) return;
+    openNewRdv({ date: state.agendaDate, start: String(hour).padStart(2, "0") + ":00" });
+  }
   window.weekViewHtml = function weekViewHtml() {
     const start = weekStart(state.agendaDate);
-    const days = Array.from({length:7},(_,i) => isoPlusDays(start,i));
+    const days = Array.from({ length: 7 }, (_, i) => isoPlusDays(start, i));
     return `<div class="week-grid">` + days.map((d) => {
-      const dayAppts = APPTS.filter((a) => a.date===d && a.status!=='annule').sort((a,b)=>a.start.localeCompare(b.start));
-      const dow = new Date(d+"T00:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric"});
-      return `<div class="week-day-col"><div class="week-day-head ${d===TODAY?'today':''}">${capitalize(dow)}</div>
-        ${dayAppts.length ? dayAppts.map((a) => `<div class="week-appt-chip" style="background:${STATUS[a.status].color}18;border-color:${STATUS[a.status].color}" onclick="openRdvDetail('${a.id}')"><b>${a.start}</b> ${a.client}</div>`).join("") : `<div style="font-size:10.5px;color:var(--ink-soft);text-align:center;padding-top:10px;">—</div>`}
+      const jour = APPTS.filter((a) => a.date === d && a.status !== "ANNULE").sort((a, b) => a.start.localeCompare(b.start));
+      const dow = new Date(d + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric" });
+      return `<div class="week-day-col"><div class="week-day-head ${d === TODAY ? 'today' : ''}">${capitalize(dow)}</div>
+        ${jour.length ? jour.map((a) => `<div class="week-appt-chip" style="background:${STATUS[a.status].color}18;border-color:${STATUS[a.status].color}" onclick="openRdvDetail('${escArg(a.id)}')"><b>${esc(a.start)}</b> ${esc(a.client)}</div>`).join("") : `<div style="font-size:10.5px;color:var(--ink-soft);text-align:center;padding-top:10px;">—</div>`}
       </div>`;
     }).join("") + `</div>`;
   }
+  window.monthCells = function monthCells() {
+    const first = new Date(state.monthCursor + "-01T00:00:00");
+    const gridStart = new Date(first); gridStart.setDate(first.getDate() - ((first.getDay() + 6) % 7));
+    return Array.from({ length: 42 }, (_, i) => { const d = new Date(gridStart); d.setDate(gridStart.getDate() + i); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); });
+  }
   window.monthViewHtml = function monthViewHtml() {
-    const first = new Date(state.monthCursor+"-01T00:00:00");
-    const startOffset = (first.getDay()+6)%7;
-    const gridStart = new Date(first); gridStart.setDate(first.getDate()-startOffset);
-    const cells = Array.from({length:42},(_,i) => { const d = new Date(gridStart); d.setDate(gridStart.getDate()+i); return d.toISOString().slice(0,10); });
-    const dows = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+    const dows = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
     let html = `<div class="month-grid">` + dows.map((d) => `<div class="month-dow">${d}</div>`).join("");
-    cells.forEach((iso) => {
-      const inMonth = iso.slice(0,7)===state.monthCursor;
-      const count = APPTS.filter((a) => a.date===iso && a.status!=='annule').length;
-      const num = parseInt(iso.slice(8,10),10);
-      html += `<div class="month-cell ${inMonth?'':'muted'} ${iso===TODAY?'today':''}" onclick="jumpToDay('${iso}')"><div class="month-cell-num">${num}</div>${count?`<span class="month-cell-count">${count} RDV</span>`:""}</div>`;
+    monthCells().forEach((iso) => {
+      const inMonth = iso.slice(0, 7) === state.monthCursor;
+      const count = APPTS.filter((a) => a.date === iso && a.status !== "ANNULE").length;
+      html += `<div class="month-cell ${inMonth ? '' : 'muted'} ${iso === TODAY ? 'today' : ''}" onclick="jumpToDay('${iso}')"><div class="month-cell-num">${parseInt(iso.slice(8, 10), 10)}</div>${count ? `<span class="month-cell-count">${count} RDV</span>` : ""}</div>`;
     });
     return html + `</div>`;
   }
-  window.jumpToDay = function jumpToDay(iso) { state.agendaDate = iso; state.agendaView = "day"; renderAgenda(); }
+  window.jumpToDay = function jumpToDay(iso) { state.agendaDate = iso; state.monthCursor = iso.slice(0, 7); state.agendaView = "day"; renderAgenda(); }
   window.miniCalHtml = function miniCalHtml() {
-    const first = new Date(state.monthCursor+"-01T00:00:00");
-    const startOffset = (first.getDay()+6)%7;
-    const gridStart = new Date(first); gridStart.setDate(first.getDate()-startOffset);
-    const cells = Array.from({length:42},(_,i) => { const d = new Date(gridStart); d.setDate(gridStart.getDate()+i); return d.toISOString().slice(0,10); });
-    const dows = ["L","M","M","J","V","S","D"];
-    let html = `<div class="mini-cal"><div class="mini-cal-head"><button onclick="miniCalShift(-1)">${iconChevronLeft()}</button><span>${capitalize(first.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}))}</span><button onclick="miniCalShift(1)">${iconChevronRight()}</button></div><div class="mini-cal-grid">`;
+    const first = new Date(state.monthCursor + "-01T00:00:00");
+    const dows = ["L", "M", "M", "J", "V", "S", "D"];
+    let html = `<div class="mini-cal"><div class="mini-cal-head"><button onclick="miniCalShift(-1)">${iconChevronLeft()}</button><span>${capitalize(first.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }))}</span><button onclick="miniCalShift(1)">${iconChevronRight()}</button></div><div class="mini-cal-grid">`;
     dows.forEach((d) => html += `<div class="mini-cal-dow">${d}</div>`);
-    cells.forEach((iso) => {
-      const inMonth = iso.slice(0,7)===state.monthCursor;
-      const hasAppt = APPTS.some((a) => a.date===iso && a.status!=="annule");
-      const num = parseInt(iso.slice(8,10),10);
-      html += `<div class="mini-cal-day ${inMonth?'':'muted'} ${iso===TODAY?'today':''} ${iso===state.agendaDate?'selected':''} ${hasAppt?'has-appt':''}" onclick="jumpToDay('${iso}')">${num}</div>`;
+    monthCells().forEach((iso) => {
+      const inMonth = iso.slice(0, 7) === state.monthCursor;
+      const hasAppt = APPTS.some((a) => a.date === iso && a.status !== "ANNULE");
+      html += `<div class="mini-cal-day ${inMonth ? '' : 'muted'} ${iso === TODAY ? 'today' : ''} ${iso === state.agendaDate ? 'selected' : ''} ${hasAppt ? 'has-appt' : ''}" onclick="jumpToDay('${iso}')">${parseInt(iso.slice(8, 10), 10)}</div>`;
     });
     return html + `</div></div>`;
   }
-  window.miniCalShift = function miniCalShift(dir) { const d = new Date(state.monthCursor+"-01T00:00:00"); d.setMonth(d.getMonth()+dir); state.monthCursor = d.toISOString().slice(0,7); renderAgenda(); }
+  window.miniCalShift = function miniCalShift(dir) {
+    const d = new Date(state.monthCursor + "-01T00:00:00");
+    d.setMonth(d.getMonth() + dir);
+    state.monthCursor = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 7);
+    renderAgenda();
+  }
 
   /* =========================================================
      PAGE : RÉSERVATIONS
@@ -424,71 +583,92 @@ export default function ProfessionnelDashboard() {
   window.renderRdvPage = function renderRdvPage() {
     document.getElementById("page-rdv").innerHTML = `
       <div class="filter-row">
-        <input type="text" placeholder="Rechercher un client…" oninput="updateRdvFilter('search', this.value)" style="min-width:220px" />
+        <input type="text" placeholder="Rechercher un client…" value="${esc(state.rdvFilters.search)}" oninput="updateRdvFilter('search', this.value)" style="min-width:220px" />
         <select onchange="updateRdvFilter('status', this.value)">
           <option value="">Tous les états</option>
-          ${Object.entries(STATUS).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join("")}
+          ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${state.rdvFilters.status === k ? 'selected' : ''}>${v.label}</option>`).join("")}
         </select>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="exportRdvCsv()">${iconPrinter()} Exporter CSV</button>
       </div>
       <div class="card"><table class="data-table"><thead><tr><th>Client</th><th>Service</th><th>Date</th><th>Heure</th><th>Origine</th><th>Statut</th><th></th></tr></thead><tbody id="rdvTableBody"></tbody></table></div>
     `;
     renderRdvTable();
   }
-  window.updateRdvFilter = function updateRdvFilter(key, val) { state.rdvFilters[key] = val; renderRdvTable(); }
-  window.renderRdvTable = function renderRdvTable() {
+  window.updateRdvFilter = function updateRdvFilter(key, v) { state.rdvFilters[key] = v; renderRdvTable(); }
+  window.filteredRdv = function filteredRdv() {
     const f = state.rdvFilters;
-    let rows = APPTS.filter((a) => (!f.status || a.status===f.status) && (!f.search || a.client.toLowerCase().includes(f.search.toLowerCase())))
-      .sort((a,b) => (b.date+b.start).localeCompare(a.date+a.start));
+    return APPTS
+      .filter((a) => (!f.status || a.status === f.status) && (!f.search || a.client.toLowerCase().includes(f.search.toLowerCase()) || a.phone.includes(f.search)))
+      .sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
+  }
+  window.renderRdvTable = function renderRdvTable() {
+    const rows = filteredRdv();
     const body = document.getElementById("rdvTableBody");
     if (!body) return;
     if (!rows.length) { body.innerHTML = `<tr><td colspan="7"><div class="table-empty">Aucune réservation ne correspond à ces filtres</div></td></tr>`; return; }
-    body.innerHTML = rows.map((a) => `<tr class="row-clickable" onclick="openRdvDetail('${a.id}')">
-      <td><div class="cell-client"><div class="avatar-sm" style="background:${ME.color}">${initials(a.client)}</div><div><div class="cell-client-name">${a.client}</div><div class="cell-client-sub">${a.phone}</div></div></div></td>
-      <td>${a.service}</td><td>${fmtDateShort(a.date)}</td><td>${a.start}</td>
-      <td style="font-size:11.5px;color:var(--ink-soft);">${a.source}</td>
+    body.innerHTML = rows.map((a) => `<tr class="row-clickable" onclick="openRdvDetail('${escArg(a.id)}')">
+      <td><div class="cell-client"><div class="avatar-sm" style="background:${ME.color}">${esc(initials(a.client))}</div><div><div class="cell-client-name">${esc(a.client)}</div><div class="cell-client-sub">${esc(a.phone)}</div></div></div></td>
+      <td>${esc(a.service)}</td><td>${fmtDateShort(a.date)}</td><td>${esc(a.start)}</td>
+      <td style="font-size:11.5px;color:var(--ink-soft);">${esc(a.source)}</td>
       <td><span class="status-pill ${STATUS[a.status].cls}">${STATUS[a.status].label}</span></td>
-      <td><div class="row-actions" onclick="event.stopPropagation()"><button class="icon-btn" title="Consulter" onclick="openRdvDetail('${a.id}')">${iconEye()}</button></div></td>
+      <td><div class="row-actions" onclick="event.stopPropagation()"><button class="icon-btn" title="Consulter" onclick="openRdvDetail('${escArg(a.id)}')">${iconEye()}</button></div></td>
     </tr>`).join("");
+  }
+  // Export local des lignes réellement affichées (aucune donnée inventée).
+  window.exportCsv = function exportCsv(filename, headers, rows) {
+    const cell = (v) => `"${String(v === null || v === undefined ? "" : v).replace(/"/g, '""')}"`;
+    const csv = [headers.map(cell).join(";"), ...rows.map((r) => r.map(cell).join(";"))].join("\r\n");
+    const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    showToast(`Export « ${esc(filename)} » téléchargé`);
+  }
+  window.exportRdvCsv = function exportRdvCsv() {
+    const rows = filteredRdv().map((a) => [a.client, a.phone, a.service, a.date, a.start, a.end, a.source, STATUS[a.status].label]);
+    exportCsv("reservations.csv", ["Client", "Téléphone", "Service", "Date", "Début", "Fin", "Origine", "Statut"], rows);
   }
 
   /* =========================================================
      PAGE : CLIENTS (+ fiche + notes internes)
      ========================================================= */
-  window.uniqueClients = function uniqueClients() {
-    const map = new Map();
-    APPTS.forEach((a) => { if (!map.has(a.client)) map.set(a.client, { name:a.client, phone:a.phone, email:a.email, dob:a.dob, appts:[] }); map.get(a.client).appts.push(a); });
-    return Array.from(map.values());
+  window.apptsDuClient = function apptsDuClient(clientId) {
+    return APPTS.filter((a) => a.clientId === clientId).sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
   }
   window.renderClientsPage = function renderClientsPage() {
     document.getElementById("page-clients").innerHTML = `
       <div class="filter-row">
-        <input type="text" placeholder="Rechercher un client…" oninput="updateClientsFilter('search', this.value)" style="min-width:220px" />
+        <input type="text" placeholder="Rechercher un client…" value="${esc(state.clientsFilters.search)}" oninput="updateClientsFilter('search', this.value)" style="min-width:220px" />
         <select onchange="updateClientsFilter('upcoming', this.value)">
           <option value="">Tous les clients</option>
-          <option value="oui">Avec RDV à venir</option>
-          <option value="non">Sans RDV à venir</option>
+          <option value="oui" ${state.clientsFilters.upcoming === 'oui' ? 'selected' : ''}>Avec RDV à venir</option>
+          <option value="non" ${state.clientsFilters.upcoming === 'non' ? 'selected' : ''}>Sans RDV à venir</option>
         </select>
         <div class="view-toggle" id="clientsViewToggle" style="margin-left:auto">
-          <button class="${state.clientsView==='list'?'active':''}" onclick="setClientsView('list')" title="Vue liste">${iconList()}</button>
-          <button class="${state.clientsView==='grid'?'active':''}" onclick="setClientsView('grid')" title="Vue grille">${iconGrid()}</button>
+          <button class="${state.clientsView === 'list' ? 'active' : ''}" onclick="setClientsView('list')" title="Vue liste">${iconList()}</button>
+          <button class="${state.clientsView === 'grid' ? 'active' : ''}" onclick="setClientsView('grid')" title="Vue grille">${iconGrid()}</button>
         </div>
       </div>
       <div id="clientsContainer"></div>
     `;
     renderClientsContainer();
   }
-  window.updateClientsFilter = function updateClientsFilter(key, val) { state.clientsFilters[key] = val; renderClientsContainer(); }
+  window.updateClientsFilter = function updateClientsFilter(key, v) { state.clientsFilters[key] = v; renderClientsContainer(); }
   window.setClientsView = function setClientsView(v) {
     state.clientsView = v;
     const toggle = document.getElementById("clientsViewToggle");
-    if (toggle) toggle.querySelectorAll("button").forEach((b,i) => b.classList.toggle("active", (i===0 && v==="list") || (i===1 && v==="grid")));
+    if (toggle) toggle.querySelectorAll("button").forEach((b, i) => b.classList.toggle("active", (i === 0 && v === "list") || (i === 1 && v === "grid")));
     renderClientsContainer();
   }
   window.filteredClients = function filteredClients() {
     const f = state.clientsFilters;
-    return uniqueClients().filter((c) => {
-      if (f.search && !c.name.toLowerCase().includes(f.search.toLowerCase())) return false;
-      const hasUpcoming = c.appts.some((a) => a.date >= TODAY && a.status === "reserve");
+    return CLIENTS.filter((c) => {
+      if (f.search) {
+        const q = f.search.toLowerCase();
+        if (!c.name.toLowerCase().includes(q) && !(c.phone || "").includes(f.search)) return false;
+      }
+      const hasUpcoming = apptsDuClient(c.id).some((a) => a.date >= TODAY && a.status === "RESERVE");
       if (f.upcoming === "oui" && !hasUpcoming) return false;
       if (f.upcoming === "non" && hasUpcoming) return false;
       return true;
@@ -506,17 +686,24 @@ export default function ProfessionnelDashboard() {
       renderClientsTable(clients);
     }
   }
+  window.clientCounts = function clientCounts(clientId) {
+    const list = apptsDuClient(clientId);
+    return {
+      upcoming: list.filter((a) => a.date >= TODAY && a.status === "RESERVE").length,
+      past: list.filter((a) => a.status === "TERMINE").length,
+    };
+  }
   window.renderClientsTable = function renderClientsTable(clients) {
     const body = document.getElementById("clientsTableBody");
     if (!body) return;
     if (!clients.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucun client ne correspond à ces filtres</div></td></tr>`; return; }
     body.innerHTML = clients.map((c) => {
-      const upcoming = c.appts.filter((a) => a.date >= TODAY && a.status === "reserve").length;
-      const past = c.appts.filter((a) => a.status === "termine").length;
-      return `<tr class="row-clickable" onclick="openClientFiche('${encodeURIComponent(c.name)}')">
-        <td><div class="cell-client"><div class="avatar-sm" style="background:var(--primary)">${initials(c.name)}</div><div><div class="cell-client-name">${c.name}</div><div class="cell-client-sub">${calcAge(c.dob)} ans</div></div></div></td>
-        <td>${c.phone}</td><td>${c.email}</td><td>${upcoming}</td><td>${past}</td>
-        <td><div class="row-actions" onclick="event.stopPropagation()"><button class="icon-btn" onclick="openClientFiche('${encodeURIComponent(c.name)}')">${iconEye()}</button></div></td>
+      const n = clientCounts(c.id);
+      const age = calcAge(c.dob);
+      return `<tr class="row-clickable" onclick="openClientFiche('${escArg(c.id)}')">
+        <td><div class="cell-client"><div class="avatar-sm" style="background:var(--primary)">${esc(initials(c.name))}</div><div><div class="cell-client-name">${esc(c.name)}</div><div class="cell-client-sub">${age === null ? "Âge non renseigné" : age + " ans"}</div></div></div></td>
+        <td>${esc(c.phone)}</td><td>${esc(c.email || "—")}</td><td>${n.upcoming}</td><td>${n.past}</td>
+        <td><div class="row-actions" onclick="event.stopPropagation()"><button class="icon-btn" onclick="openClientFiche('${escArg(c.id)}')">${iconEye()}</button></div></td>
       </tr>`;
     }).join("");
   }
@@ -525,30 +712,32 @@ export default function ProfessionnelDashboard() {
     if (!grid) return;
     if (!clients.length) { grid.innerHTML = `<div class="table-empty">Aucun client ne correspond à ces filtres</div>`; return; }
     grid.innerHTML = clients.map((c) => {
-      const upcoming = c.appts.filter((a) => a.date >= TODAY && a.status === "reserve").length;
-      const past = c.appts.filter((a) => a.status === "termine").length;
-      return `<div class="card" style="padding:16px;cursor:pointer;" onclick="openClientFiche('${encodeURIComponent(c.name)}')">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div class="avatar-sm" style="width:40px;height:40px;font-size:14px;background:var(--primary)">${initials(c.name)}</div><div><div style="font-weight:700;font-size:13.5px;">${c.name}</div><div style="font-size:11px;color:var(--ink-soft)">${calcAge(c.dob)} ans</div></div></div>
-        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:3px;">${c.phone}</div>
-        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">${c.email}</div>
-        <div style="display:flex;justify-content:space-between;font-size:11.5px;"><span>${upcoming} à venir</span><span>${past} passés</span></div>
+      const n = clientCounts(c.id);
+      const age = calcAge(c.dob);
+      return `<div class="card" style="padding:16px;cursor:pointer;" onclick="openClientFiche('${escArg(c.id)}')">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div class="avatar-sm" style="width:40px;height:40px;font-size:14px;background:var(--primary)">${esc(initials(c.name))}</div><div><div style="font-weight:700;font-size:13.5px;">${esc(c.name)}</div><div style="font-size:11px;color:var(--ink-soft)">${age === null ? "Âge non renseigné" : age + " ans"}</div></div></div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:3px;">${esc(c.phone)}</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">${esc(c.email || "—")}</div>
+        <div style="display:flex;justify-content:space-between;font-size:11.5px;"><span>${n.upcoming} à venir</span><span>${n.past} passés</span></div>
       </div>`;
     }).join("");
   }
-  window.openClientFiche = function openClientFiche(encodedName) {
-    const name = decodeURIComponent(encodedName);
-    const c = uniqueClients().find((x) => x.name === name);
+  window.openClientFiche = function openClientFiche(clientId) {
+    const c = CLIENTS.find((x) => x.id === clientId);
     if (!c) return;
-    const history = c.appts.slice().sort((a,b) => (b.date+b.start).localeCompare(a.date+a.start));
-    const upcoming = history.filter((a) => a.date >= TODAY && a.status === "reserve");
-    const past = history.filter((a) => a.status === "termine");
-    const cancelled = history.filter((a) => a.status === "annule");
-    const notes = NOTES[name] || [];
-    const html = `
+    const history = apptsDuClient(c.id);
+    const upcoming = history.filter((a) => a.date >= TODAY && a.status === "RESERVE");
+    const past = history.filter((a) => a.status === "TERMINE");
+    const cancelled = history.filter((a) => a.status === "ANNULE");
+    const absent = history.filter((a) => a.status === "ABSENT").length;
+    const seuil = PARAMS?.seuilAbsences ?? 2;
+    const age = calcAge(c.dob);
+    openModal(`
       <div class="modal-head">
-        <div style="display:flex;align-items:center;gap:12px;"><div class="avatar-sm" style="width:42px;height:42px;font-size:15px;background:var(--primary)">${initials(c.name)}</div><div><p class="modal-title">${c.name}</p><p class="modal-sub">${calcAge(c.dob)} ans · ${c.phone}</p></div></div>
+        <div style="display:flex;align-items:center;gap:12px;"><div class="avatar-sm" style="width:42px;height:42px;font-size:15px;background:var(--primary)">${esc(initials(c.name))}</div><div><p class="modal-title">${esc(c.name)}</p><p class="modal-sub">${age === null ? "Âge non renseigné" : age + " ans"} · ${esc(c.phone)}</p></div></div>
         <button class="modal-close" onclick="closeModal()">×</button>
       </div>
+      ${absent >= seuil ? `<div class="repeat-warning" style="margin-bottom:12px;">${iconAlert()} ${absent} absences enregistrées — seuil d'alerte (${seuil}) atteint</div>` : ""}
       <div class="modal-tabs">
         <button class="active" onclick="switchClientTab(this,'rdv')">Rendez-vous</button>
         <button onclick="switchClientTab(this,'notes')">Notes internes</button>
@@ -563,39 +752,51 @@ export default function ProfessionnelDashboard() {
       </div>
       <div id="clientTabNotes" style="display:none">
         <div class="field-row"><textarea id="newNoteText" rows="2" placeholder="Ajouter une note interne (visible uniquement par vous)…"></textarea></div>
-        <button class="btn btn-primary btn-sm" onclick="addClientNote('${encodeURIComponent(name)}')">${iconPlus()} Ajouter la note</button>
-        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;" id="notesList">
-          ${notes.length ? notes.map((n) => noteRowHtml(n, name)).join("") : `<div class="table-empty">Aucune note pour ce client</div>`}
-        </div>
+        <button class="btn btn-primary btn-sm" onclick="addClientNote('${escArg(c.id)}')">${iconPlus()} Ajouter la note</button>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;" id="notesList">${notesListHtml(c.id)}</div>
       </div>
       <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Fermer</button></div>
-    `;
-    openModal(html, true);
+    `, true);
   }
-  window.rdvMiniRow = function rdvMiniRow(a) { return `<div class="dash-list-row" style="padding:8px 4px;"><span class="dash-list-time" style="width:auto;">${fmtDateShort(a.date)}</span><div style="flex:1"><div class="dash-list-name" style="font-size:12.5px;">${a.service}</div></div><span class="status-pill ${STATUS[a.status].cls}">${STATUS[a.status].label}</span></div>`; }
+  window.rdvMiniRow = function rdvMiniRow(a) {
+    return `<div class="dash-list-row" style="padding:8px 4px;"><span class="dash-list-time" style="width:auto;">${fmtDateShort(a.date)}</span><div style="flex:1"><div class="dash-list-name" style="font-size:12.5px;">${esc(a.service)}</div><div class="dash-list-sub">${esc(a.start)}</div></div><span class="status-pill ${STATUS[a.status].cls}">${STATUS[a.status].label}</span></div>`;
+  }
   window.switchClientTab = function switchClientTab(btn, tab) {
     btn.parentElement.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("clientTabRdv").style.display = tab === "rdv" ? "block" : "none";
     document.getElementById("clientTabNotes").style.display = tab === "notes" ? "block" : "none";
   }
-  window.noteRowHtml = function noteRowHtml(n, clientName) {
-    return `<div class="card" style="padding:10px 14px;"><div style="font-size:12.5px;">${n.text}</div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;"><span style="font-size:10.5px;color:var(--ink-soft)">${n.date}</span><div class="row-actions"><button class="icon-btn" onclick="deleteClientNote('${encodeURIComponent(clientName)}','${n.id}')">${iconTrash()}</button></div></div></div>`;
+  window.notesDuClient = function notesDuClient(clientId) { return NOTES.filter((n) => n.clientId === clientId); }
+  window.notesListHtml = function notesListHtml(clientId) {
+    const list = notesDuClient(clientId);
+    if (!list.length) return `<div class="table-empty">Aucune note pour ce client</div>`;
+    return list.map((n) => `<div class="card" style="padding:10px 14px;">
+      <div style="font-size:12.5px;white-space:pre-wrap;">${esc(n.texte)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+        <span style="font-size:10.5px;color:var(--ink-soft)">${fmtRelative(n.createdAt)}</span>
+        <div class="row-actions"><button class="icon-btn" onclick="deleteClientNote('${escArg(clientId)}','${escArg(n.id)}')">${iconTrash()}</button></div>
+      </div>
+    </div>`).join("");
   }
-  window.addClientNote = function addClientNote(encodedName) {
-    const name = decodeURIComponent(encodedName);
-    const text = document.getElementById("newNoteText").value.trim();
-    if (!text) return;
-    if (!NOTES[name]) NOTES[name] = [];
-    NOTES[name].unshift({ id: uid("n"), text, date: fmtDateShort(TODAY) });
-    document.getElementById("notesList").innerHTML = NOTES[name].map((n) => noteRowHtml(n, name)).join("");
-    document.getElementById("newNoteText").value = "";
-    showToast("Note interne ajoutée");
+  window.addClientNote = async function addClientNote(clientId) {
+    const texte = val("newNoteText");
+    if (!texte) return;
+    try {
+      const note = await professionnelApi.createNote(clientId, texte);
+      NOTES = [note, ...NOTES];
+      document.getElementById("notesList").innerHTML = notesListHtml(clientId);
+      document.getElementById("newNoteText").value = "";
+      showToast("Note interne ajoutée");
+    } catch (e) { showError(e); }
   }
-  window.deleteClientNote = function deleteClientNote(encodedName, id) {
-    const name = decodeURIComponent(encodedName);
-    NOTES[name] = (NOTES[name] || []).filter((n) => n.id !== id);
-    document.getElementById("notesList").innerHTML = NOTES[name].length ? NOTES[name].map((n) => noteRowHtml(n, name)).join("") : `<div class="table-empty">Aucune note pour ce client</div>`;
+  window.deleteClientNote = async function deleteClientNote(clientId, noteId) {
+    if (!confirm("Supprimer cette note ?")) return;
+    try {
+      await professionnelApi.deleteNote(noteId);
+      NOTES = NOTES.filter((n) => n.id !== noteId);
+      document.getElementById("notesList").innerHTML = notesListHtml(clientId);
+    } catch (e) { showError(e); }
   }
 
   /* =========================================================
@@ -604,38 +805,43 @@ export default function ProfessionnelDashboard() {
   window.renderServicesPage = function renderServicesPage() {
     document.getElementById("page-services").innerHTML = `
       <div class="filter-row">
-        <input type="text" placeholder="Rechercher un service…" oninput="updateServicesFilter('search', this.value)" style="min-width:220px" />
-        <select onchange="updateServicesFilter('status', this.value)">
-          <option value="">Tous les statuts</option>
-          <option value="active">Actif</option>
-          <option value="inactive">Inactif</option>
+        <input type="text" placeholder="Rechercher un service…" value="${esc(state.servicesFilters.search)}" oninput="updateServicesFilter('search', this.value)" style="min-width:220px" />
+        <select onchange="updateServicesFilter('actif', this.value)">
+          <option value="">Tous les services</option>
+          <option value="oui" ${state.servicesFilters.actif === 'oui' ? 'selected' : ''}>Publiés</option>
+          <option value="non" ${state.servicesFilters.actif === 'non' ? 'selected' : ''}>Non publiés</option>
         </select>
         <div class="view-toggle" id="servicesViewToggle" style="margin-left:auto">
-          <button class="${state.servicesView==='grid'?'active':''}" onclick="setServicesView('grid')" title="Vue grille">${iconGrid()}</button>
-          <button class="${state.servicesView==='list'?'active':''}" onclick="setServicesView('list')" title="Vue liste">${iconList()}</button>
+          <button class="${state.servicesView === 'grid' ? 'active' : ''}" onclick="setServicesView('grid')" title="Vue grille">${iconGrid()}</button>
+          <button class="${state.servicesView === 'list' ? 'active' : ''}" onclick="setServicesView('list')" title="Vue liste">${iconList()}</button>
         </div>
       </div>
       <div id="servicesContainer"></div>
     `;
     renderServicesContainer();
   }
-  window.updateServicesFilter = function updateServicesFilter(key, val) { state.servicesFilters[key] = val; renderServicesContainer(); }
+  window.updateServicesFilter = function updateServicesFilter(key, v) { state.servicesFilters[key] = v; renderServicesContainer(); }
   window.setServicesView = function setServicesView(v) {
     state.servicesView = v;
     const toggle = document.getElementById("servicesViewToggle");
-    if (toggle) toggle.querySelectorAll("button").forEach((b,i) => b.classList.toggle("active", (i===0 && v==="grid") || (i===1 && v==="list")));
+    if (toggle) toggle.querySelectorAll("button").forEach((b, i) => b.classList.toggle("active", (i === 0 && v === "grid") || (i === 1 && v === "list")));
     renderServicesContainer();
   }
   window.filteredServices = function filteredServices() {
     const f = state.servicesFilters;
-    return SERVICES.filter((s) => (!f.status || s.status===f.status) && (!f.search || s.name.toLowerCase().includes(f.search.toLowerCase())));
+    return SERVICES.filter((s) => {
+      if (f.actif === "oui" && !s.actif) return false;
+      if (f.actif === "non" && s.actif) return false;
+      if (f.search && !s.nom.toLowerCase().includes(f.search.toLowerCase())) return false;
+      return true;
+    });
   }
   window.renderServicesContainer = function renderServicesContainer() {
     const wrap = document.getElementById("servicesContainer");
     if (!wrap) return;
     const items = filteredServices();
     if (state.servicesView === "list") {
-      wrap.innerHTML = `<div class="card"><table class="data-table"><thead><tr><th>Service</th><th>Durée</th><th>Prix</th><th>Champs perso.</th><th>Statut</th><th></th></tr></thead><tbody id="servicesListBody"></tbody></table></div>`;
+      wrap.innerHTML = `<div class="card"><table class="data-table"><thead><tr><th>Service</th><th>Durée</th><th>Prix</th><th>Champs perso.</th><th>Publication</th><th>Disponibilité</th><th></th></tr></thead><tbody id="servicesListBody"></tbody></table></div>`;
       renderServicesListBody(items);
     } else {
       wrap.innerHTML = `<div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))" id="servicesGrid"></div>`;
@@ -645,187 +851,237 @@ export default function ProfessionnelDashboard() {
   window.renderServicesGrid = function renderServicesGrid(list) {
     const grid = document.getElementById("servicesGrid");
     if (!grid) return;
-    const items = list || SERVICES;
-    if (!items.length) { grid.innerHTML = `<div class="table-empty">Aucun service ne correspond à ces filtres</div>`; return; }
-    grid.innerHTML = items.map((s) => `
-      <div class="card" style="padding:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
-          <div style="font-weight:800;font-size:14px;">${s.name}</div>
-          <span class="status-pill ${s.status==='active'?'st-termine':'st-absent'}">${s.status==='active'?'Actif':'Inactif'}</span>
+    if (!list.length) { grid.innerHTML = `<div class="table-empty">Aucun service ne correspond à ces filtres</div>`; return; }
+    grid.innerHTML = list.map((s) => {
+      const nbChamps = champsDuService(s.id).length;
+      return `<div class="card" style="padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">
+          <div style="font-weight:800;font-size:14px;">${esc(s.nom)}</div>
+          <span class="status-pill ${s.actif ? 'st-termine' : 'st-absent'}">${s.actif ? 'Publié' : 'Non publié'}</span>
         </div>
-        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;min-height:32px;">${s.desc}</div>
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px;"><span>${s.duration} min</span><b>${s.price.toLocaleString('fr-FR')} DA</b></div>
-        ${(s.customFields && s.customFields.length) ? `<div style="font-size:11px;color:var(--primary-dark);background:var(--primary-tint);display:inline-block;padding:2px 8px;border-radius:999px;margin-bottom:10px;">${s.customFields.length} champ${s.customFields.length>1?'s':''} personnalisé${s.customFields.length>1?'s':''}</div>` : `<div style="margin-bottom:10px;"></div>`}
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;min-height:32px;">${esc(s.description || "Aucune description")}</div>
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px;"><span>${s.dureeMinutes} min</span><b>${fmtPrix(s.prix)}</b></div>
+        <div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;">
+          <span class="status-pill ${STATUT_SERVICE[s.statut]?.cls || 'st-absent'}" style="font-size:10.5px;">${STATUT_SERVICE[s.statut]?.label || s.statut}</span>
+          ${nbChamps ? `<span style="font-size:11px;color:var(--primary-dark);background:var(--primary-tint);padding:2px 8px;border-radius:999px;">${nbChamps} champ${nbChamps > 1 ? 's' : ''} personnalisé${nbChamps > 1 ? 's' : ''}</span>` : ""}
+        </div>
         <div style="display:flex;gap:6px;">
-          <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" onclick="openServiceForm('${s.id}')">${iconEdit()} Modifier</button>
-          <button class="icon-btn" title="${s.status==='active'?'Désactiver':'Activer'}" onclick="toggleServiceStatus('${s.id}')">${s.status==='active'?iconX():iconCheck()}</button>
-          <button class="icon-btn" title="Supprimer" onclick="deleteService('${s.id}')">${iconTrash()}</button>
+          <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" onclick="openServiceForm('${escArg(s.id)}')">${iconEdit()} Modifier</button>
+          <button class="icon-btn" title="${s.actif ? 'Dépublier' : 'Publier'}" onclick="toggleServiceActif('${escArg(s.id)}')">${s.actif ? iconX() : iconCheck()}</button>
+          <button class="icon-btn" title="Supprimer" onclick="deleteServiceApi('${escArg(s.id)}')">${iconTrash()}</button>
         </div>
-      </div>`).join("");
+      </div>`;
+    }).join("");
   }
   window.renderServicesListBody = function renderServicesListBody(list) {
     const body = document.getElementById("servicesListBody");
     if (!body) return;
-    if (!list.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucun service ne correspond à ces filtres</div></td></tr>`; return; }
-    body.innerHTML = list.map((s) => `<tr>
-      <td><div class="cell-client-name">${s.name}</div><div class="cell-client-sub">${s.desc}</div></td>
-      <td>${s.duration} min</td>
-      <td>${s.price.toLocaleString('fr-FR')} DA</td>
-      <td>${(s.customFields && s.customFields.length) ? s.customFields.length : '—'}</td>
-      <td><span class="status-pill ${s.status==='active'?'st-termine':'st-absent'}">${s.status==='active'?'Actif':'Inactif'}</span></td>
-      <td><div class="row-actions">
-        <button class="icon-btn" title="Modifier" onclick="openServiceForm('${s.id}')">${iconEdit()}</button>
-        <button class="icon-btn" title="${s.status==='active'?'Désactiver':'Activer'}" onclick="toggleServiceStatus('${s.id}')">${s.status==='active'?iconX():iconCheck()}</button>
-        <button class="icon-btn" title="Supprimer" onclick="deleteService('${s.id}')">${iconTrash()}</button>
-      </div></td>
-    </tr>`).join("");
+    if (!list.length) { body.innerHTML = `<tr><td colspan="7"><div class="table-empty">Aucun service ne correspond à ces filtres</div></td></tr>`; return; }
+    body.innerHTML = list.map((s) => {
+      const nbChamps = champsDuService(s.id).length;
+      return `<tr>
+        <td><div class="cell-client-name">${esc(s.nom)}</div><div class="cell-client-sub">${esc(s.description || "—")}</div></td>
+        <td>${s.dureeMinutes} min</td>
+        <td>${fmtPrix(s.prix)}</td>
+        <td>${nbChamps || "—"}</td>
+        <td><span class="status-pill ${s.actif ? 'st-termine' : 'st-absent'}">${s.actif ? 'Publié' : 'Non publié'}</span></td>
+        <td><span class="status-pill ${STATUT_SERVICE[s.statut]?.cls || 'st-absent'}">${STATUT_SERVICE[s.statut]?.label || s.statut}</span></td>
+        <td><div class="row-actions">
+          <button class="icon-btn" title="Modifier" onclick="openServiceForm('${escArg(s.id)}')">${iconEdit()}</button>
+          <button class="icon-btn" title="${s.actif ? 'Dépublier' : 'Publier'}" onclick="toggleServiceActif('${escArg(s.id)}')">${s.actif ? iconX() : iconCheck()}</button>
+          <button class="icon-btn" title="Supprimer" onclick="deleteServiceApi('${escArg(s.id)}')">${iconTrash()}</button>
+        </div></td>
+      </tr>`;
+    }).join("");
   }
-  window.toggleServiceStatus = function toggleServiceStatus(id) {
-    const s = SERVICES.find((x) => x.id===id); if (!s) return;
-    s.status = s.status === "active" ? "inactive" : "active";
-    renderServicesContainer();
-    showToast(`Service « ${s.name} » ${s.status==='active'?'activé':'désactivé'}`);
+  window.toggleServiceActif = async function toggleServiceActif(id) {
+    const s = SERVICES.find((x) => x.id === id);
+    if (!s) return;
+    try {
+      await professionnelApi.updateService(id, { actif: !s.actif });
+      showToast(`Service « ${esc(s.nom)} » ${s.actif ? 'dépublié' : 'publié'}`);
+      await refreshAll(true);
+    } catch (e) { showError(e); }
   }
-  window.deleteService = function deleteService(id) {
-    const s = SERVICES.find((x) => x.id===id); if (!s) return;
-    if (!confirm(`Supprimer le service « ${s.name} » ? Les rendez-vous passés associés resteront conservés dans l'historique.`)) return;
-    SERVICES = SERVICES.filter((x) => x.id !== id);
-    renderServicesContainer();
-    showToast("Service supprimé");
+  window.deleteServiceApi = async function deleteServiceApi(id) {
+    const s = SERVICES.find((x) => x.id === id);
+    if (!s) return;
+    if (!confirm(`Supprimer le service « ${s.nom} » ? Ses rendez-vous seront supprimés avec lui.`)) return;
+    try {
+      await professionnelApi.deleteService(id);
+      showToast("Service supprimé");
+      await refreshAll(true);
+    } catch (e) { showError(e); }
   }
 
   /* ---- Formulaire de service (Détails + Champs personnalisés) ---- */
   window.openServiceForm = function openServiceForm(id, initialTab) {
-    const s = id ? SERVICES.find((x) => x.id===id) : null;
-    const bucket = id || "__new__";
-    if (CF_SERVICE_ID !== bucket) {
-      CF_DRAFT = s ? JSON.parse(JSON.stringify(s.customFields || [])) : [];
-      CF_SERVICE_ID = bucket;
-    }
-    const tab = initialTab === "champs" ? "champs" : "details";
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">${s?'Modifier le service':'Ajouter un service'}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+    const s = id ? SERVICES.find((x) => x.id === id) : null;
+    CF_SERVICE_ID = id || null;
+    const champs = id ? champsDuService(id) : [];
+    const tab = initialTab === "champs" && id ? "champs" : "details";
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">${s ? 'Modifier le service' : 'Ajouter un service'}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
       <div class="modal-tabs">
-        <button class="${tab==='details'?'active':''}" onclick="switchServiceTab(this,'details')">Détails</button>
-        <button class="${tab==='champs'?'active':''}" onclick="switchServiceTab(this,'champs')">Champs personnalisés${CF_DRAFT.length?` (${CF_DRAFT.length})`:""}</button>
+        <button class="${tab === 'details' ? 'active' : ''}" onclick="switchServiceTab(this,'details')">Détails</button>
+        <button class="${tab === 'champs' ? 'active' : ''}" onclick="switchServiceTab(this,'champs')">Champs personnalisés${champs.length ? ` (${champs.length})` : ""}</button>
       </div>
-      <div id="svTabDetails" style="display:${tab==='details'?'block':'none'}">
-        <div class="field-row"><label>Nom du service</label><input type="text" id="svName" value="${s?s.name:''}" placeholder="Consultation générale" /></div>
-        <div class="field-row"><label>Description</label><textarea id="svDesc" rows="2" placeholder="Description courte">${s?s.desc:''}</textarea></div>
+      <div id="svTabDetails" style="display:${tab === 'details' ? 'block' : 'none'}">
+        <div class="field-row"><label>Nom du service *</label><input type="text" id="svName" value="${esc(s ? s.nom : "")}" /></div>
+        <div class="field-row"><label>Description</label><textarea id="svDesc" rows="2">${esc(s ? (s.description || "") : "")}</textarea></div>
         <div class="field-2col">
-          <div class="field-row"><label>Durée (minutes)</label><input type="number" id="svDuration" value="${s?s.duration:30}" /></div>
-          <div class="field-row"><label>Prix (DA)</label><input type="number" id="svPrice" value="${s?s.price:''}" placeholder="Si applicable" /></div>
+          <div class="field-row"><label>Durée (minutes) *</label><input type="number" id="svDuration" min="5" step="5" value="${s ? s.dureeMinutes : 30}" /></div>
+          <div class="field-row"><label>Prix (DA)</label><input type="number" id="svPrice" min="0" step="0.01" value="${s && s.prix !== null && s.prix !== undefined ? (s.prix / 100) : ""}" /></div>
         </div>
-        <div class="field-row"><label>Statut</label><select id="svStatus"><option value="active" ${s&&s.status==='active'?'selected':''}>Actif</option><option value="inactive" ${s&&s.status==='inactive'?'selected':''}>Inactif</option></select></div>
-        <div class="field-hint">L'ajout d'une image du service sera disponible lors du branchement au stockage de fichiers.</div>
+        ${s ? `<div class="field-2col">
+          <div class="field-row"><label>Publication</label><select id="svActif"><option value="oui" ${s.actif ? 'selected' : ''}>Publié</option><option value="non" ${!s.actif ? 'selected' : ''}>Non publié</option></select></div>
+          <div class="field-row"><label>Disponibilité affichée</label><select id="svStatut">${Object.entries(STATUT_SERVICE).map(([k, v]) => `<option value="${k}" ${s.statut === k ? 'selected' : ''}>${v.label}</option>`).join("")}</select></div>
+        </div>` : `<div class="field-hint">Le service sera publié dès sa création ; vous pourrez le dépublier ensuite.</div>`}
       </div>
-      <div id="svTabChamps" style="display:${tab==='champs'?'block':'none'}">
-        <div class="field-hint" style="margin-bottom:12px;">Ces champs apparaissent dans le formulaire de réservation du client, à l'étape « Options spécifiques ». Ce que vous configurez ici est ce que le client voit.</div>
+      <div id="svTabChamps" style="display:${tab === 'champs' ? 'block' : 'none'}">
+        ${id ? `<div class="field-hint" style="margin-bottom:12px;">Ces champs apparaissent dans le formulaire de réservation du client, à l'étape « Options spécifiques ». Chaque modification est enregistrée immédiatement.</div>
         <div id="cfList"></div>
-        <button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="openFieldEditor()">${iconPlus()} Ajouter un champ</button>
+        <button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="openFieldEditor()">${iconPlus()} Ajouter un champ</button>`
+          : `<div class="field-hint">Enregistrez d'abord le service : ses champs personnalisés pourront ensuite lui être rattachés.</div>`}
       </div>
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveService('${id||''}')">${iconCheck()} Enregistrer</button></div>
-    `;
-    openModal(html, true);
-    renderCFList();
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveService('${escArg(id || "")}')">${iconCheck()} Enregistrer</button></div>
+    `, true);
+    if (id) renderCFList();
   }
   window.switchServiceTab = function switchServiceTab(btn, tab) {
     btn.parentElement.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
-    document.getElementById("svTabDetails").style.display = tab==="details" ? "block" : "none";
-    document.getElementById("svTabChamps").style.display = tab==="champs" ? "block" : "none";
+    document.getElementById("svTabDetails").style.display = tab === "details" ? "block" : "none";
+    document.getElementById("svTabChamps").style.display = tab === "champs" ? "block" : "none";
+  }
+  window.saveService = async function saveService(id) {
+    const nom = val("svName");
+    if (!nom) {
+      showToast("Le nom du service est requis");
+      const tabBtn = document.querySelector(".modal-tabs button");
+      if (tabBtn) switchServiceTab(tabBtn, "details");
+      return;
+    }
+    const dureeMinutes = parseInt(val("svDuration"), 10);
+    if (!dureeMinutes || dureeMinutes < 5) { showToast("La durée doit être d'au moins 5 minutes"); return; }
+    const prixSaisi = val("svPrice");
+    const data = {
+      nom,
+      description: val("svDesc") || undefined,
+      dureeMinutes,
+      // Le prix est transmis en centimes, comme il est stocké.
+      prix: prixSaisi === "" ? undefined : Math.round(parseFloat(prixSaisi.replace(",", ".")) * 100),
+    };
+    try {
+      if (id) {
+        await professionnelApi.updateService(id, {
+          ...data,
+          actif: val("svActif") === "oui",
+          statut: val("svStatut") || undefined,
+        });
+        showToast(`Service « ${esc(nom)} » modifié`);
+      } else {
+        await professionnelApi.createService(data);
+        showToast(`Service « ${esc(nom)} » ajouté`);
+      }
+      CF_SERVICE_ID = null;
+      closeModal();
+      await refreshAll(true);
+    } catch (e) { showError(e); }
   }
 
-  /* ---- Liste des champs personnalisés du service en cours d'édition ---- */
+  /* ---- Champs personnalisés du service en cours d'édition ---- */
   window.cfFieldLabel = function cfFieldLabel(f) { return (f && f.label) ? f.label : "(Sans nom)"; }
-  window.cfTypeLabel = function cfTypeLabel(t) { const ft = FIELD_TYPES.find((x) => x.value===t); return ft ? ft.label : t; }
+  window.cfTypeLabel = function cfTypeLabel(t) { const ft = FIELD_TYPES.find((x) => x.value === t); return ft ? ft.label : t; }
   window.renderCFList = function renderCFList() {
     const el = document.getElementById("cfList");
     if (!el) return;
-    if (!CF_DRAFT.length) { el.innerHTML = `<div class="table-empty">Aucun champ personnalisé — le client ne voit que le formulaire standard.</div>`; return; }
-    el.innerHTML = CF_DRAFT.map((f) => {
+    const champs = champsDuService(CF_SERVICE_ID);
+    if (!champs.length) { el.innerHTML = `<div class="table-empty">Aucun champ personnalisé — le client ne voit que le formulaire standard.</div>`; return; }
+    el.innerHTML = champs.map((f) => {
       const condCount = (f.conditions || []).length;
       return `<div class="card" style="padding:12px 14px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
           <div>
-            <div style="font-weight:700;font-size:13px;">${cfFieldLabel(f)} ${f.required?'<span class="status-pill st-annule" style="margin-left:6px;">Obligatoire</span>':''}</div>
-            <div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px;">${cfTypeLabel(f.type)}${condCount ? ` · Condition${condCount>1?'s':''} (${f.conditionLogic||'ET'})` : ' · Toujours visible'}</div>
+            <div style="font-weight:700;font-size:13px;">${esc(cfFieldLabel(f))} ${f.obligatoire ? '<span class="status-pill st-annule" style="margin-left:6px;">Obligatoire</span>' : ''}</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px;">${esc(cfTypeLabel(f.type))}${condCount ? ` · Condition${condCount > 1 ? 's' : ''} (${esc(f.conditionLogique || 'ET')})` : ' · Toujours visible'}</div>
           </div>
           <div class="row-actions">
-            <button class="icon-btn" title="Modifier" onclick="openFieldEditor('${f.id}')">${iconEdit()}</button>
-            <button class="icon-btn" title="Supprimer" onclick="deleteCFField('${f.id}')">${iconTrash()}</button>
+            <button class="icon-btn" title="Modifier" onclick="openFieldEditor('${escArg(f.id)}')">${iconEdit()}</button>
+            <button class="icon-btn" title="Supprimer" onclick="deleteCFField('${escArg(f.id)}')">${iconTrash()}</button>
           </div>
         </div>
       </div>`;
     }).join("");
   }
-  window.deleteCFField = function deleteCFField(fieldId) {
+  window.deleteCFField = async function deleteCFField(fieldId) {
     if (!confirm("Supprimer ce champ personnalisé ?")) return;
-    CF_DRAFT = CF_DRAFT.filter((f) => f.id !== fieldId);
-    CF_DRAFT.forEach((f) => { f.conditions = (f.conditions||[]).filter((c) => c.fieldId !== fieldId); });
-    renderCFList();
-    const badgeTabBtn = document.querySelector(".modal-tabs button:nth-child(2)");
-    if (badgeTabBtn) badgeTabBtn.textContent = `Champs personnalisés${CF_DRAFT.length?` (${CF_DRAFT.length})`:""}`;
+    try {
+      await professionnelApi.deleteChamp(fieldId);
+      // Les conditions qui référençaient ce champ deviennent caduques : on les retire.
+      const orphelins = champsDuService(CF_SERVICE_ID).filter((f) => (f.conditions || []).some((c) => c.champId === fieldId));
+      for (const f of orphelins) {
+        await professionnelApi.updateChamp(f.id, { conditions: (f.conditions || []).filter((c) => c.champId !== fieldId) });
+      }
+      CHAMPS = await professionnelApi.listChamps();
+      renderCFList();
+      showToast("Champ supprimé");
+    } catch (e) { showError(e); }
   }
-  window.returnToServiceForm = function returnToServiceForm() {
-    openServiceForm(CF_SERVICE_ID === "__new__" ? undefined : CF_SERVICE_ID, "champs");
-  }
+  window.returnToServiceForm = function returnToServiceForm() { openServiceForm(CF_SERVICE_ID, "champs"); }
 
-  /* ---- Éditeur d'un champ (label, type, obligatoire, options, condition) ---- */
   window.openFieldEditor = function openFieldEditor(fieldId) {
-    const existing = fieldId ? CF_DRAFT.find((x) => x.id===fieldId) : null;
-    CF_EDIT_DRAFT = existing ? JSON.parse(JSON.stringify(existing)) : {
-      id: uid("cf"), label: "", type: "texte_court", required: false, options: [], defaultValue: "", helpText: "", conditions: [], conditionLogic: "ET",
-    };
+    const existing = fieldId ? champsDuService(CF_SERVICE_ID).find((x) => x.id === fieldId) : null;
+    CF_EDIT_DRAFT = existing
+      ? JSON.parse(JSON.stringify({ ...existing, conditions: existing.conditions || [] }))
+      : { id: null, label: "", type: "TEXTE", obligatoire: false, options: [], valeurParDefaut: "", texteAide: "", conditions: [], conditionLogique: "ET" };
     renderFieldEditorModal();
   }
   window.renderFieldEditorModal = function renderFieldEditorModal() {
     const f = CF_EDIT_DRAFT;
-    const isEditing = CF_DRAFT.some((x) => x.id === f.id);
-    const otherFields = CF_DRAFT.filter((x) => x.id !== f.id);
+    const autres = champsDuService(CF_SERVICE_ID).filter((x) => x.id !== f.id);
     const conditions = f.conditions || [];
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">${isEditing?'Modifier le champ':'Nouveau champ'}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="field-row"><label>Label (nom affiché au client)</label><input type="text" id="cfLabel" value="${f.label}" oninput="updateCFDraft('label', this.value)" placeholder="Ex. Type de véhicule" /></div>
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">${f.id ? 'Modifier le champ' : 'Nouveau champ'}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-row"><label>Label (nom affiché au client) *</label><input type="text" id="cfLabel" value="${esc(f.label)}" oninput="updateCFDraft('label', this.value)" /></div>
       <div class="field-2col">
-        <div class="field-row"><label>Type de champ</label><select id="cfType" onchange="onCFTypeChange(this.value)">${FIELD_TYPES.map((t) => `<option value="${t.value}" ${f.type===t.value?'selected':''}>${t.label}</option>`).join("")}</select></div>
-        <div class="field-row"><label>Obligatoire</label><select onchange="updateCFDraft('required', this.value==='oui')"><option value="non" ${!f.required?'selected':''}>Facultatif</option><option value="oui" ${f.required?'selected':''}>Obligatoire</option></select></div>
+        <div class="field-row"><label>Type de champ</label><select id="cfType" onchange="onCFTypeChange(this.value)">${FIELD_TYPES.map((t) => `<option value="${t.value}" ${f.type === t.value ? 'selected' : ''}>${t.label}</option>`).join("")}</select></div>
+        <div class="field-row"><label>Obligatoire</label><select onchange="updateCFDraft('obligatoire', this.value==='oui')"><option value="non" ${!f.obligatoire ? 'selected' : ''}>Facultatif</option><option value="oui" ${f.obligatoire ? 'selected' : ''}>Obligatoire</option></select></div>
       </div>
-      <div id="cfOptionsWrap" style="display:${HAS_OPTIONS_TYPES.includes(f.type)?'block':'none'}">
-        <div class="field-row"><label>Options (une par ligne, définies librement)</label><textarea id="cfOptions" rows="3" oninput="updateCFDraft('options', this.value.split('\\n').map(s=>s.trim()).filter(Boolean))" placeholder="Option A">${(f.options||[]).join("\n")}</textarea></div>
+      <div id="cfOptionsWrap" style="display:${HAS_OPTIONS_TYPES.includes(f.type) ? 'block' : 'none'}">
+        <div class="field-row"><label>Options (une par ligne)</label><textarea id="cfOptions" rows="3" oninput="updateCFDraft('options', this.value.split('\\n').map(s=>s.trim()).filter(Boolean))">${esc((f.options || []).join("\n"))}</textarea></div>
       </div>
-      <div class="field-row"><label>Valeur par défaut (optionnel)</label><input type="text" value="${f.defaultValue||''}" oninput="updateCFDraft('defaultValue', this.value)" /></div>
-      <div class="field-row"><label>Texte d'aide (optionnel)</label><input type="text" value="${f.helpText||''}" oninput="updateCFDraft('helpText', this.value)" /></div>
+      <div class="field-row"><label>Valeur par défaut (optionnel)</label><input type="text" value="${esc(f.valeurParDefaut || "")}" oninput="updateCFDraft('valeurParDefaut', this.value)" /></div>
+      <div class="field-row"><label>Texte d'aide (optionnel)</label><input type="text" value="${esc(f.texteAide || "")}" oninput="updateCFDraft('texteAide', this.value)" /></div>
       <div class="card" style="padding:14px;margin-top:6px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${conditions.length?'10px':'0'};">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${conditions.length ? '10px' : '0'};">
           <div style="font-weight:700;font-size:12.5px;">Condition d'affichage (facultatif)</div>
-          <button class="btn btn-ghost btn-sm" onclick="addCFCondition()" ${!otherFields.length?'disabled title="Créez d\'abord un autre champ pour ce service"':''}>${iconPlus()} Ajouter une condition</button>
+          <button class="btn btn-ghost btn-sm" onclick="addCFCondition()" ${!autres.length ? 'disabled title="Créez d\'abord un autre champ pour ce service"' : ''}>${iconPlus()} Ajouter une condition</button>
         </div>
-        ${conditions.length>1?`<div class="field-row" style="margin:8px 0;"><label>Logique entre les conditions</label><select onchange="updateCFDraft('conditionLogic', this.value)"><option value="ET" ${f.conditionLogic!=='OU'?'selected':''}>ET — toutes les conditions</option><option value="OU" ${f.conditionLogic==='OU'?'selected':''}>OU — au moins une condition</option></select></div>`:""}
-        <div id="cfConditionsList">${conditions.length ? conditions.map((c,i) => cfConditionRowHtml(c,i,otherFields)).join("") : `<div class="field-hint">Sans condition, ce champ est toujours visible côté client.</div>`}</div>
+        ${conditions.length > 1 ? `<div class="field-row" style="margin:8px 0;"><label>Logique entre les conditions</label><select onchange="updateCFDraft('conditionLogique', this.value)"><option value="ET" ${f.conditionLogique !== 'OU' ? 'selected' : ''}>ET — toutes les conditions</option><option value="OU" ${f.conditionLogique === 'OU' ? 'selected' : ''}>OU — au moins une condition</option></select></div>` : ""}
+        <div id="cfConditionsList">${conditions.length ? conditions.map((c, i) => cfConditionRowHtml(c, i, autres)).join("") : `<div class="field-hint">Sans condition, ce champ est toujours visible côté client.</div>`}</div>
       </div>
       <div class="modal-actions"><button class="btn btn-ghost" onclick="returnToServiceForm()">Retour</button><button class="btn btn-primary" onclick="saveCFField()">${iconCheck()} Enregistrer le champ</button></div>
-    `;
-    openModal(html, true);
+    `, true);
   }
   window.onCFTypeChange = function onCFTypeChange(v) {
     updateCFDraft("type", v);
     const wrap = document.getElementById("cfOptionsWrap");
     if (wrap) wrap.style.display = HAS_OPTIONS_TYPES.includes(v) ? "block" : "none";
   }
-  window.updateCFDraft = function updateCFDraft(key, val) { CF_EDIT_DRAFT[key] = val; }
-  window.cfConditionRowHtml = function cfConditionRowHtml(c, i, otherFields) {
-    const refField = otherFields.find((x) => x.id===c.fieldId) || otherFields[0];
+  window.updateCFDraft = function updateCFDraft(key, v) { CF_EDIT_DRAFT[key] = v; }
+  window.cfConditionRowHtml = function cfConditionRowHtml(c, i, autres) {
+    const ref = autres.find((x) => x.id === c.champId) || autres[0];
     let valueInput;
-    if (refField && refField.type === "switch") {
-      valueInput = `<select onchange="updateCFCondition(${i},'value',this.value)"><option value="oui" ${c.value==='oui'?'selected':''}>Oui</option><option value="non" ${c.value==='non'?'selected':''}>Non</option></select>`;
-    } else if (refField && HAS_OPTIONS_TYPES.includes(refField.type)) {
-      valueInput = `<select onchange="updateCFCondition(${i},'value',this.value)">${(refField.options||[]).map((o) => `<option value="${o}" ${c.value===o?'selected':''}>${o}</option>`).join("")}</select>`;
+    if (ref && ref.type === "SWITCH") {
+      valueInput = `<select onchange="updateCFCondition(${i},'valeur',this.value)"><option value="oui" ${c.valeur === 'oui' ? 'selected' : ''}>Oui</option><option value="non" ${c.valeur === 'non' ? 'selected' : ''}>Non</option></select>`;
+    } else if (ref && HAS_OPTIONS_TYPES.includes(ref.type)) {
+      valueInput = `<select onchange="updateCFCondition(${i},'valeur',this.value)">${(ref.options || []).map((o) => `<option value="${esc(o)}" ${c.valeur === o ? 'selected' : ''}>${esc(o)}</option>`).join("")}</select>`;
     } else {
-      valueInput = `<input type="text" value="${c.value||''}" oninput="updateCFCondition(${i},'value',this.value)" placeholder="Valeur" />`;
+      valueInput = `<input type="text" value="${esc(c.valeur || "")}" oninput="updateCFCondition(${i},'valeur',this.value)" placeholder="Valeur" />`;
     }
     return `<div class="field-2col" style="margin-bottom:8px;align-items:end;">
-      <div class="field-row" style="margin-bottom:0"><label>Si</label><select onchange="updateCFCondition(${i},'fieldId',this.value)">${otherFields.map((o) => `<option value="${o.id}" ${(c.fieldId===o.id)?'selected':''}>${cfFieldLabel(o)}</option>`).join("")}</select></div>
+      <div class="field-row" style="margin-bottom:0"><label>Si</label><select onchange="updateCFCondition(${i},'champId',this.value)">${autres.map((o) => `<option value="${esc(o.id)}" ${c.champId === o.id ? 'selected' : ''}>${esc(cfFieldLabel(o))}</option>`).join("")}</select></div>
       <div class="field-row" style="margin-bottom:0;display:flex;gap:6px;">
         <div style="flex:1"><label>Vaut</label>${valueInput}</div>
         <button class="icon-btn" style="margin-top:22px;flex-shrink:0;" title="Retirer" onclick="removeCFCondition(${i})">${iconTrash()}</button>
@@ -833,175 +1089,264 @@ export default function ProfessionnelDashboard() {
     </div>`;
   }
   window.addCFCondition = function addCFCondition() {
-    const otherFields = CF_DRAFT.filter((x) => x.id !== CF_EDIT_DRAFT.id);
-    if (!otherFields.length) return;
+    const autres = champsDuService(CF_SERVICE_ID).filter((x) => x.id !== CF_EDIT_DRAFT.id);
+    if (!autres.length) return;
     if (!CF_EDIT_DRAFT.conditions) CF_EDIT_DRAFT.conditions = [];
-    const ref = otherFields[0];
-    CF_EDIT_DRAFT.conditions.push({ fieldId: ref.id, value: ref.type==="switch" ? "oui" : ((ref.options||[])[0] || "") });
+    const ref = autres[0];
+    CF_EDIT_DRAFT.conditions.push({ champId: ref.id, valeur: ref.type === "SWITCH" ? "oui" : ((ref.options || [])[0] || "") });
     renderFieldEditorModal();
   }
-  window.removeCFCondition = function removeCFCondition(i) { CF_EDIT_DRAFT.conditions.splice(i,1); renderFieldEditorModal(); }
-  window.updateCFCondition = function updateCFCondition(i, key, val) {
-    CF_EDIT_DRAFT.conditions[i][key] = val;
-    if (key === "fieldId") {
-      const otherFields = CF_DRAFT.filter((x) => x.id !== CF_EDIT_DRAFT.id);
-      const ref = otherFields.find((x) => x.id===val);
-      CF_EDIT_DRAFT.conditions[i].value = ref && ref.type==="switch" ? "oui" : ((ref && ref.options && ref.options[0]) || "");
+  window.removeCFCondition = function removeCFCondition(i) { CF_EDIT_DRAFT.conditions.splice(i, 1); renderFieldEditorModal(); }
+  window.updateCFCondition = function updateCFCondition(i, key, v) {
+    CF_EDIT_DRAFT.conditions[i][key] = v;
+    if (key === "champId") {
+      const autres = champsDuService(CF_SERVICE_ID).filter((x) => x.id !== CF_EDIT_DRAFT.id);
+      const ref = autres.find((x) => x.id === v);
+      CF_EDIT_DRAFT.conditions[i].valeur = ref && ref.type === "SWITCH" ? "oui" : ((ref && ref.options && ref.options[0]) || "");
       renderFieldEditorModal();
     }
   }
-  window.saveCFField = function saveCFField() {
-    if (!CF_EDIT_DRAFT.label || !CF_EDIT_DRAFT.label.trim()) { showToast("Le label du champ est requis"); return; }
-    if (HAS_OPTIONS_TYPES.includes(CF_EDIT_DRAFT.type) && !(CF_EDIT_DRAFT.options||[]).length) { showToast("Ajoutez au moins une option pour ce type de champ"); return; }
-    const idx = CF_DRAFT.findIndex((x) => x.id === CF_EDIT_DRAFT.id);
-    if (idx >= 0) CF_DRAFT[idx] = CF_EDIT_DRAFT; else CF_DRAFT.push(CF_EDIT_DRAFT);
-    showToast(`Champ « ${CF_EDIT_DRAFT.label} » enregistré`);
-    returnToServiceForm();
-  }
-
-  window.saveService = function saveService(id) {
-    const nameEl = document.getElementById("svName");
-    const name = nameEl ? nameEl.value.trim() : "";
-    if (!name) {
-      showToast("Le nom du service est requis");
-      const tabBtn = document.querySelector(".modal-tabs button");
-      if (tabBtn) switchServiceTab(tabBtn, "details");
-      return;
-    }
-    const data = {
-      name, desc: document.getElementById("svDesc").value.trim(),
-      duration: parseInt(document.getElementById("svDuration").value,10) || 30,
-      price: parseInt(document.getElementById("svPrice").value,10) || 0,
-      status: document.getElementById("svStatus").value,
-      customFields: CF_DRAFT,
+  window.saveCFField = async function saveCFField() {
+    const f = CF_EDIT_DRAFT;
+    if (!f.label || !f.label.trim()) { showToast("Le label du champ est requis"); return; }
+    if (HAS_OPTIONS_TYPES.includes(f.type) && !(f.options || []).length) { showToast("Ajoutez au moins une option pour ce type de champ"); return; }
+    const payload = {
+      serviceId: CF_SERVICE_ID,
+      label: f.label.trim(),
+      type: f.type,
+      options: f.options || [],
+      obligatoire: !!f.obligatoire,
+      texteAide: f.texteAide || undefined,
+      valeurParDefaut: f.valeurParDefaut || undefined,
+      conditions: f.conditions || [],
+      conditionLogique: f.conditionLogique || "ET",
     };
-    if (id) { Object.assign(SERVICES.find((x) => x.id===id), data); showToast(`Service « ${name} » modifié`); }
-    else { SERVICES.push({ id: uid("s"), ...data }); showToast(`Service « ${name} » ajouté`); }
-    CF_DRAFT = []; CF_SERVICE_ID = null;
-    closeModal(); renderServicesContainer();
+    try {
+      if (f.id) await professionnelApi.updateChamp(f.id, payload);
+      else await professionnelApi.createChamp(payload);
+      CHAMPS = await professionnelApi.listChamps();
+      showToast(`Champ « ${esc(payload.label)} » enregistré`);
+      returnToServiceForm();
+    } catch (e) { showError(e); }
   }
 
   /* =========================================================
      PAGE : DISPONIBILITÉS
+     Une ligne de disponibilité = une plage horaire pour un jour.
      ========================================================= */
+  window.disposDuJour = function disposDuJour(jourIndex) {
+    return DISPOS.filter((d) => d.jourSemaine === jourIndex).sort((a, b) => a.heureDebut.localeCompare(b.heureDebut));
+  }
   window.renderDispoPage = function renderDispoPage() {
-    const days = Object.keys(AVAILABILITY);
     document.getElementById("page-dispo").innerHTML = `
       <div class="card" style="padding:20px;margin-bottom:18px;">
         <div class="card-head" style="padding:0 0 14px;border:none;"><h3>Jours et horaires disponibles</h3></div>
-        ${days.map((d) => {
-          const info = AVAILABILITY[d];
+        <div class="field-hint" style="margin-bottom:6px;">Ces plages alimentent directement le moteur de créneaux : un jour sans plage est fermé à la réservation.</div>
+        ${JOURS.map((label, index) => {
+          const plages = disposDuJour(index);
           return `<div style="display:flex;align-items:center;gap:16px;padding:12px 0;border-top:1px solid var(--line);">
-            <label style="display:flex;align-items:center;gap:8px;width:130px;font-size:13px;font-weight:700;">
-              <input type="checkbox" ${info.on?'checked':''} onchange="toggleDayOn('${d}', this.checked)" /> ${d}
-            </label>
-            <div style="flex:1;font-size:12.5px;color:var(--ink-soft);">
-              ${info.on ? (info.ranges.map((r,i) => `<span style="margin-right:14px;">${r.start} – ${r.end}</span>`).join("") || "Aucun horaire défini") : "Fermé"}
+            <div style="width:130px;font-size:13px;font-weight:700;">${label}</div>
+            <div style="flex:1;font-size:12.5px;color:var(--ink-soft);display:flex;flex-wrap:wrap;gap:8px;">
+              ${plages.length ? plages.map((p) => `<span class="status-pill st-termine" style="font-size:11px;">${esc(p.heureDebut)} – ${esc(p.heureFin)}
+                <button class="icon-btn" style="margin-left:6px;" title="Retirer cette plage" onclick="removeDispo('${escArg(p.id)}')">${iconTrash()}</button></span>`).join("") : "Fermé"}
             </div>
-            ${info.on ? `<button class="btn btn-ghost btn-sm" onclick="editDayRanges('${d}')">${iconEdit()} Modifier</button>` : ""}
+            <button class="btn btn-ghost btn-sm" onclick="openAddDispo(${index})">${iconPlus()} Ajouter une plage</button>
           </div>`;
         }).join("")}
       </div>
-      <div class="card" style="padding:0;overflow:hidden;">
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:18px;">
         <button class="accordion-toggle" onclick="toggleIndispoAccordion()">
-          <h3 style="margin:0;font-size:14.5px;">Indisponibilités</h3>
-          <span class="accordion-chevron ${state.dispoIndispoOpen?'open':''}">${iconChevronRight()}</span>
+          <h3 style="margin:0;font-size:14.5px;">Absences et fermetures</h3>
+          <span class="accordion-chevron ${state.dispoIndispoOpen ? 'open' : ''}">${iconChevronRight()}</span>
         </button>
-        <div class="accordion-body" style="display:${state.dispoIndispoOpen?'block':'none'};padding:0 20px 20px;">
+        <div class="accordion-body" style="display:${state.dispoIndispoOpen ? 'block' : 'none'};padding:0 20px 20px;">
           <button class="btn btn-primary btn-sm" style="margin-bottom:14px;" onclick="openIndispoForm()">${iconPlus()} Fermer une période</button>
-          <table class="data-table"><thead><tr><th>Type</th><th>Du</th><th>Au</th><th>Motif</th><th>Clients notifiés</th><th></th></tr></thead>
-          <tbody>${INDISPOS.length ? INDISPOS.map((i) => `<tr><td style="text-transform:capitalize">${i.type}</td><td>${fmtDateShort(i.start)}</td><td>${fmtDateShort(i.end)}</td><td>${i.motif}</td><td>${i.notified?`<span class="status-pill st-termine">Oui</span>`:`<button class="btn btn-ghost btn-sm" onclick="notifyClientsIndispo('${i.id}')">Notifier</button>`}</td><td><button class="icon-btn" onclick="removeIndispo('${i.id}')">${iconTrash()}</button></td></tr>`).join("") : `<tr><td colspan="6"><div class="table-empty">Aucune indisponibilité programmée</div></td></tr>`}</tbody></table>
+          <table class="data-table"><thead><tr><th>Type</th><th>Du</th><th>Au</th><th>Motif</th><th></th></tr></thead>
+          <tbody>${INDISPOS.length ? INDISPOS.map((i) => `<tr>
+            <td>${TYPES_INDISPO[i.type] || esc(i.type)}</td>
+            <td>${fmtDateShort(i.dateDebut)}</td>
+            <td>${fmtDateShort(i.dateFin)}</td>
+            <td>${esc(i.motif || "—")}</td>
+            <td><button class="icon-btn" title="Rouvrir la période" onclick="removeIndispo('${escArg(i.id)}')">${iconTrash()}</button></td>
+          </tr>`).join("") : `<tr><td colspan="5"><div class="table-empty">Aucune période fermée</div></td></tr>`}</tbody></table>
         </div>
       </div>
+      ${renderParamsCard()}
     `;
   }
   window.toggleIndispoAccordion = function toggleIndispoAccordion() { state.dispoIndispoOpen = !state.dispoIndispoOpen; renderDispoPage(); }
-  window.toggleDayOn = function toggleDayOn(day, checked) { AVAILABILITY[day].on = checked; renderDispoPage(); showToast(`${day} ${checked?'ouvert':'fermé'}`); }
-  window.editDayRanges = function editDayRanges(day) {
-    const info = AVAILABILITY[day];
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">Horaires — ${day}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div id="rangesList">${info.ranges.map((r,i) => rangeRowHtml(r,i)).join("") || `<div class="field-hint" id="noRangeHint">Aucun horaire — ajoutez une plage.</div>`}</div>
-      <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="addRangeRow('${day}')">${iconPlus()} Ajouter une plage</button>
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveDayRanges('${day}')">${iconCheck()} Enregistrer</button></div>
-    `;
-    openModal(html);
+  window.openAddDispo = function openAddDispo(jourIndex) {
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Ajouter une plage — ${JOURS[jourIndex]}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-2col">
+        <div class="field-row"><label>De</label><input type="time" id="dispoStart" value="09:00" /></div>
+        <div class="field-row"><label>À</label><input type="time" id="dispoEnd" value="17:00" /></div>
+      </div>
+      <div class="field-error" id="dispoError"></div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveDispo(${jourIndex})">${iconCheck()} Ajouter</button></div>
+    `);
   }
-  window.rangeRowHtml = function rangeRowHtml(r,i) { return `<div class="field-2col" data-idx="${i}" style="margin-bottom:8px;"><div class="field-row" style="margin-bottom:0"><input type="time" value="${r.start}" class="rangeStart" /></div><div class="field-row" style="margin-bottom:0"><input type="time" value="${r.end}" class="rangeEnd" /></div></div>`; }
-  window.addRangeRow = function addRangeRow(day) {
-    const hint = document.getElementById("noRangeHint"); if (hint) hint.remove();
-    document.getElementById("rangesList").insertAdjacentHTML("beforeend", rangeRowHtml({start:"09:00",end:"12:00"}, 99));
+  window.saveDispo = async function saveDispo(jourIndex) {
+    const err = document.getElementById("dispoError");
+    const heureDebut = val("dispoStart"), heureFin = val("dispoEnd");
+    if (!heureDebut || !heureFin || heureFin <= heureDebut) {
+      err.textContent = "L'heure de fin doit être postérieure à l'heure de début.";
+      err.classList.add("show");
+      return;
+    }
+    try {
+      await professionnelApi.addDisponibilite({ jourSemaine: jourIndex, heureDebut, heureFin });
+      closeModal();
+      showToast(`Plage ajoutée — ${JOURS[jourIndex]} ${heureDebut} – ${heureFin}`);
+      await refreshAll(true);
+    } catch (e) {
+      const msg = e?.response?.data?.message || "L'ajout a échoué.";
+      err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
+      err.classList.add("show");
+    }
   }
-  window.saveDayRanges = function saveDayRanges(day) {
-    const rows = document.querySelectorAll("#rangesList > div");
-    const ranges = Array.from(rows).map((r) => ({ start: r.querySelector(".rangeStart").value, end: r.querySelector(".rangeEnd").value }));
-    AVAILABILITY[day].ranges = ranges;
-    closeModal(); renderDispoPage();
-    showToast(`Horaires du ${day} mis à jour`);
+  window.removeDispo = async function removeDispo(id) {
+    try {
+      await professionnelApi.removeDisponibilite(id);
+      showToast("Plage retirée");
+      await refreshAll(true);
+    } catch (e) { showError(e); }
   }
   window.openIndispoForm = function openIndispoForm() {
-    const html = `
+    openModal(`
       <div class="modal-head"><div><p class="modal-title">Fermer une période</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="field-row"><label>Type</label><select id="inType"><option value="creneau">Un créneau</option><option value="jour">Une journée</option><option value="periode" selected>Une période</option></select></div>
-      <div class="field-2col"><div class="field-row"><label>Du</label><input type="date" id="inStart" value="${TODAY}" /></div><div class="field-row"><label>Au</label><input type="date" id="inEnd" value="${TODAY}" /></div></div>
+      <div class="field-row"><label>Type</label><select id="inType">${Object.entries(TYPES_INDISPO).map(([k, v]) => `<option value="${k}" ${k === 'PERIODE' ? 'selected' : ''}>${v}</option>`).join("")}</select></div>
+      <div class="field-2col">
+        <div class="field-row"><label>Du</label><input type="datetime-local" id="inStart" value="${TODAY}T08:00" /></div>
+        <div class="field-row"><label>Au</label><input type="datetime-local" id="inEnd" value="${TODAY}T19:00" /></div>
+      </div>
       <div class="field-row"><label>Motif</label><select id="inMotif"><option>Congé</option><option>Absence</option><option>Réunion</option><option>Fermeture exceptionnelle</option><option>Indisponibilité personnelle</option><option>Autre</option></select></div>
-      <div class="field-hint">Les rendez-vous déjà réservés sur cette période seront automatiquement annulés.</div>
+      <div class="field-hint">Les rendez-vous déjà réservés sur cette période seront automatiquement annulés par le serveur.</div>
+      <div class="field-error" id="inError"></div>
       <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveIndispo()">${iconCheck()} Fermer la période</button></div>
-    `;
-    openModal(html);
+    `);
   }
-  window.saveIndispo = function saveIndispo() {
-    const type = document.getElementById("inType").value;
-    const start = document.getElementById("inStart").value;
-    const end = document.getElementById("inEnd").value;
-    const motif = document.getElementById("inMotif").value;
-    const affected = APPTS.filter((a) => a.date >= start && a.date <= end && a.status === "reserve");
-    affected.forEach((a) => { a.status = "annule"; a.remark = "Annulé — " + motif; });
-    INDISPOS.push({ id: uid("i"), type, start, end, motif, notified: false });
-    state.dispoIndispoOpen = true;
-    closeModal(); renderDispoPage();
-    showToast(`Période fermée${affected.length ? ` — ${affected.length} rendez-vous annulé(s)` : ""}`);
-    if (affected.length) addNotif("agenda", `${affected.length} rendez-vous annulés suite à une fermeture (${motif})`);
+  window.saveIndispo = async function saveIndispo() {
+    const err = document.getElementById("inError");
+    const dateDebut = val("inStart"), dateFin = val("inEnd");
+    if (!dateDebut || !dateFin || dateFin <= dateDebut) {
+      err.textContent = "La fin doit être postérieure au début.";
+      err.classList.add("show");
+      return;
+    }
+    try {
+      const res = await professionnelApi.addIndisponibilite({
+        type: val("inType"),
+        dateDebut: new Date(dateDebut).toISOString(),
+        dateFin: new Date(dateFin).toISOString(),
+        motif: val("inMotif") || undefined,
+      });
+      state.dispoIndispoOpen = true;
+      closeModal();
+      // Le nombre de rendez-vous annulés est celui compté par le serveur.
+      showToast(`Période fermée${res.rendezVousAnnules ? ` — ${res.rendezVousAnnules} rendez-vous annulé(s)` : ""}`);
+      await refreshAll(true);
+    } catch (e) {
+      const msg = e?.response?.data?.message || "La fermeture a échoué.";
+      err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
+      err.classList.add("show");
+    }
   }
-  window.notifyClientsIndispo = function notifyClientsIndispo(id) {
-    const i = INDISPOS.find((x) => x.id===id); if (!i) return;
-    i.notified = true; renderDispoPage();
-    showToast("E-mail envoyé aux clients concernés");
+  window.removeIndispo = async function removeIndispo(id) {
+    if (!confirm("Rouvrir cette période ? Les rendez-vous déjà annulés ne seront pas rétablis.")) return;
+    try {
+      await professionnelApi.removeIndisponibilite(id);
+      state.dispoIndispoOpen = true;
+      showToast("Période rouverte");
+      await refreshAll(true);
+    } catch (e) { showError(e); }
   }
-  window.removeIndispo = function removeIndispo(id) { INDISPOS = INDISPOS.filter((x) => x.id !== id); renderDispoPage(); }
+
+  /* ---- Règles de réservation appliquées par le backend ---- */
+  window.renderParamsCard = function renderParamsCard() {
+    const p = PARAMS || {};
+    return `<div class="card" style="padding:20px;">
+      <div class="card-head" style="padding:0 0 14px;border:none;"><h3>Règles de réservation</h3></div>
+      <div class="field-hint" style="margin-bottom:12px;">Ces règles sont appliquées par le serveur lors du calcul des créneaux et de la création d'un rendez-vous.</div>
+      <div class="field-2col">
+        <div class="field-row"><label>Intervalle minimum entre deux rendez-vous (min)</label><input type="number" id="prmIntervalle" min="0" max="240" value="${p.intervalleMinutes ?? 10}" /></div>
+        <div class="field-row"><label>Délai minimum avant réservation (h)</label><input type="number" id="prmDelaiMin" min="0" max="720" value="${p.delaiMinHeures ?? 2}" /></div>
+      </div>
+      <div class="field-2col">
+        <div class="field-row"><label>Horizon maximum de réservation (jours)</label><input type="number" id="prmDelaiMax" min="1" max="730" value="${p.delaiMaxJours ?? 90}" /></div>
+        <div class="field-row"><label>Seuil d'alerte d'absences répétées</label><input type="number" id="prmSeuil" min="1" max="50" value="${p.seuilAbsences ?? 2}" /></div>
+      </div>
+      <div class="field-row"><label>Rendez-vous maximum par client et par jour</label><input type="number" id="prmMaxJour" min="1" max="20" value="${p.maxRdvParClientParJour ?? 1}" /></div>
+      <div class="field-error" id="prmError"></div>
+      <button class="btn btn-primary" onclick="saveParams()">${iconCheck()} Enregistrer les règles</button>
+    </div>`;
+  }
+  window.saveParams = async function saveParams() {
+    const err = document.getElementById("prmError");
+    const data = {
+      intervalleMinutes: parseInt(val("prmIntervalle"), 10),
+      delaiMinHeures: parseInt(val("prmDelaiMin"), 10),
+      delaiMaxJours: parseInt(val("prmDelaiMax"), 10),
+      seuilAbsences: parseInt(val("prmSeuil"), 10),
+      maxRdvParClientParJour: parseInt(val("prmMaxJour"), 10),
+    };
+    if (Object.values(data).some((v) => Number.isNaN(v))) {
+      err.textContent = "Toutes les règles doivent être des nombres.";
+      err.classList.add("show");
+      return;
+    }
+    err.classList.remove("show");
+    try {
+      PARAMS = await professionnelApi.updateParametres(data);
+      showToast("Règles de réservation enregistrées");
+    } catch (e) {
+      const msg = e?.response?.data?.message || "L'enregistrement a échoué.";
+      err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
+      err.classList.add("show");
+    }
+  }
 
   /* =========================================================
      PAGE : RÉCEPTIONNISTES
      ========================================================= */
+  const PERM_KEYS = ["peutConsulterAgenda", "peutGererRdv", "peutGererPlanning", "peutGererParametres"];
+  window.permLabel = function permLabel(k) {
+    return {
+      peutConsulterAgenda: "Consulter l'agenda",
+      peutGererRdv: "Gérer les rendez-vous",
+      peutGererPlanning: "Gérer le planning détaillé",
+      peutGererParametres: "Gérer les paramètres",
+    }[k] || k;
+  }
   window.renderReceptionnistesPage = function renderReceptionnistesPage() {
     document.getElementById("page-receptionnistes").innerHTML = `
       <div class="filter-row">
-        <input type="text" placeholder="Rechercher une réceptionniste…" oninput="updateReceptionnistesFilter('search', this.value)" style="min-width:220px" />
+        <input type="text" placeholder="Rechercher une réceptionniste…" value="${esc(state.receptionnistesFilters.search)}" oninput="updateReceptionnistesFilter('search', this.value)" style="min-width:220px" />
         <select onchange="updateReceptionnistesFilter('status', this.value)">
           <option value="">Tous les statuts</option>
-          <option value="active">Active</option>
-          <option value="inactive">Désactivée</option>
+          <option value="active" ${state.receptionnistesFilters.status === 'active' ? 'selected' : ''}>Active</option>
+          <option value="inactive" ${state.receptionnistesFilters.status === 'inactive' ? 'selected' : ''}>Désactivée</option>
         </select>
         <div class="view-toggle" id="receptionnistesViewToggle" style="margin-left:auto">
-          <button class="${state.receptionnistesView==='list'?'active':''}" onclick="setReceptionnistesView('list')" title="Vue liste">${iconList()}</button>
-          <button class="${state.receptionnistesView==='grid'?'active':''}" onclick="setReceptionnistesView('grid')" title="Vue grille">${iconGrid()}</button>
+          <button class="${state.receptionnistesView === 'list' ? 'active' : ''}" onclick="setReceptionnistesView('list')" title="Vue liste">${iconList()}</button>
+          <button class="${state.receptionnistesView === 'grid' ? 'active' : ''}" onclick="setReceptionnistesView('grid')" title="Vue grille">${iconGrid()}</button>
         </div>
       </div>
       <div id="receptionnistesContainer"></div>
-      <div class="field-hint" style="margin-top:10px;">L'affectation d'une réceptionniste à votre compte est effectuée par l'Admin général ; vous gérez ici son activation et ses autorisations.</div>
+      <div class="field-hint" style="margin-top:10px;">L'affectation d'une réceptionniste à votre compte est effectuée par l'Admin général ; vous gérez ici son activation sur votre espace et ses autorisations.</div>
     `;
     renderReceptionnistesContainer();
   }
-  window.updateReceptionnistesFilter = function updateReceptionnistesFilter(key, val) { state.receptionnistesFilters[key] = val; renderReceptionnistesContainer(); }
+  window.updateReceptionnistesFilter = function updateReceptionnistesFilter(key, v) { state.receptionnistesFilters[key] = v; renderReceptionnistesContainer(); }
   window.setReceptionnistesView = function setReceptionnistesView(v) {
     state.receptionnistesView = v;
     const toggle = document.getElementById("receptionnistesViewToggle");
-    if (toggle) toggle.querySelectorAll("button").forEach((b,i) => b.classList.toggle("active", (i===0 && v==="list") || (i===1 && v==="grid")));
+    if (toggle) toggle.querySelectorAll("button").forEach((b, i) => b.classList.toggle("active", (i === 0 && v === "list") || (i === 1 && v === "grid")));
     renderReceptionnistesContainer();
   }
   window.filteredReceptionnistes = function filteredReceptionnistes() {
     const f = state.receptionnistesFilters;
-    return RECEPTIONNISTES.filter((r) => (!f.search || r.name.toLowerCase().includes(f.search.toLowerCase())) && (!f.status || (f.status==='active')===r.active));
+    return RECEPTIONNISTES.filter((r) => (!f.search || r.name.toLowerCase().includes(f.search.toLowerCase())) && (!f.status || (f.status === 'active') === r.active));
   }
   window.renderReceptionnistesContainer = function renderReceptionnistesContainer() {
     const wrap = document.getElementById("receptionnistesContainer");
@@ -1010,100 +1355,106 @@ export default function ProfessionnelDashboard() {
     if (state.receptionnistesView === "grid") {
       wrap.innerHTML = `<div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">${list.length ? list.map((r) => `
         <div class="card" style="padding:16px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div class="avatar-sm" style="width:40px;height:40px;font-size:14px;background:#E2478A">${initials(r.name)}</div><div><div style="font-weight:700;font-size:13.5px;">${r.name}</div><span class="status-pill ${r.active?'st-termine':'st-absent'}">${r.active?'Active':'Désactivée'}</span></div></div>
-          <div style="font-size:12px;color:var(--ink-soft);margin-bottom:3px;">${r.email}</div>
-          <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">${r.phone}</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div class="avatar-sm" style="width:40px;height:40px;font-size:14px;background:#E2478A">${esc(initials(r.name))}</div><div><div style="font-weight:700;font-size:13.5px;">${esc(r.name)}</div><span class="status-pill ${r.active ? 'st-termine' : 'st-absent'}">${r.active ? 'Active' : 'Désactivée'}</span></div></div>
+          <div style="font-size:12px;color:var(--ink-soft);margin-bottom:3px;">${esc(r.email)}</div>
+          <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">${esc(r.phone)}</div>
           <div style="display:flex;gap:6px;">
-            <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" onclick="openPermsForm('${r.id}')">${iconEdit()} Autorisations</button>
-            <button class="icon-btn" title="${r.active?'Désactiver':'Activer'}" onclick="toggleReceptionniste('${r.id}')">${r.active?iconX():iconCheck()}</button>
+            <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" onclick="openPermsForm('${escArg(r.affectationId)}')">${iconEdit()} Autorisations</button>
+            <button class="icon-btn" title="${r.active ? 'Désactiver' : 'Activer'}" onclick="toggleReceptionniste('${escArg(r.affectationId)}')">${r.active ? iconX() : iconCheck()}</button>
           </div>
         </div>`).join("") : `<div class="table-empty">Aucune réceptionniste ne correspond à ces filtres</div>`}</div>`;
     } else {
       wrap.innerHTML = `<div class="card"><table class="data-table">
         <thead><tr><th>Réceptionniste</th><th>E-mail</th><th>Téléphone</th><th>Statut</th><th>Autorisations</th><th></th></tr></thead>
         <tbody>${list.length ? list.map((r) => `<tr>
-          <td><div class="cell-client"><div class="avatar-sm" style="background:#E2478A">${initials(r.name)}</div><div class="cell-client-name">${r.name}</div></div></td>
-          <td>${r.email}</td><td>${r.phone}</td>
-          <td><span class="status-pill ${r.active?'st-termine':'st-absent'}">${r.active?'Active':'Désactivée'}</span></td>
-          <td style="font-size:11px;color:var(--ink-soft);">${Object.entries(r.perms).filter(([,v])=>v).map(([k])=>permLabel(k)).join(", ") || "Aucune"}</td>
+          <td><div class="cell-client"><div class="avatar-sm" style="background:#E2478A">${esc(initials(r.name))}</div><div class="cell-client-name">${esc(r.name)}</div></div></td>
+          <td>${esc(r.email)}</td><td>${esc(r.phone)}</td>
+          <td><span class="status-pill ${r.active ? 'st-termine' : 'st-absent'}">${r.active ? 'Active' : 'Désactivée'}</span></td>
+          <td style="font-size:11px;color:var(--ink-soft);">${PERM_KEYS.filter((k) => r.perms[k]).map(permLabel).join(", ") || "Aucune"}</td>
           <td><div class="row-actions">
-            <button class="btn btn-ghost btn-sm" onclick="openPermsForm('${r.id}')">${iconEdit()} Autorisations</button>
-            <button class="icon-btn" title="${r.active?'Désactiver':'Activer'}" onclick="toggleReceptionniste('${r.id}')">${r.active?iconX():iconCheck()}</button>
+            <button class="btn btn-ghost btn-sm" onclick="openPermsForm('${escArg(r.affectationId)}')">${iconEdit()} Autorisations</button>
+            <button class="icon-btn" title="${r.active ? 'Désactiver' : 'Activer'}" onclick="toggleReceptionniste('${escArg(r.affectationId)}')">${r.active ? iconX() : iconCheck()}</button>
           </div></td>
         </tr>`).join("") : `<tr><td colspan="6"><div class="table-empty">Aucune réceptionniste ne correspond à ces filtres</div></td></tr>`}</tbody>
       </table></div>`;
     }
   }
-  window.permLabel = function permLabel(k) { return { agenda: "Consulter l'agenda", gererRdv: "Gérer les rendez-vous", gererPlanning: "Gérer le planning détaillé", gererParametres: "Gérer les paramètres" }[k] || k; }
-  window.toggleReceptionniste = function toggleReceptionniste(id) {
-    const r = RECEPTIONNISTES.find((x) => x.id===id); if (!r) return;
-    r.active = !r.active; renderReceptionnistesContainer();
-    showToast(`${r.name} ${r.active?'activée':'désactivée'}`);
+  window.toggleReceptionniste = async function toggleReceptionniste(affectationId) {
+    const r = RECEPTIONNISTES.find((x) => x.affectationId === affectationId);
+    if (!r) return;
+    try {
+      await professionnelApi.updatePermissions(affectationId, { actif: !r.active });
+      showToast(`${esc(r.name)} ${r.active ? 'désactivée' : 'activée'} sur votre espace`);
+      await refreshAll(true);
+    } catch (e) { showError(e); }
   }
-  window.openPermsForm = function openPermsForm(id) {
-    const r = RECEPTIONNISTES.find((x) => x.id===id); if (!r) return;
-    const perms = ["agenda","gererRdv","gererPlanning","gererParametres"];
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">Autorisations — ${r.name}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      ${perms.map((k) => `<label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;"><input type="checkbox" id="perm_${k}" ${r.perms[k]?'checked':''} /> ${permLabel(k)}</label>`).join("")}
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="savePerms('${id}')">${iconCheck()} Enregistrer</button></div>
-    `;
-    openModal(html);
+  window.openPermsForm = function openPermsForm(affectationId) {
+    const r = RECEPTIONNISTES.find((x) => x.affectationId === affectationId);
+    if (!r) return;
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Autorisations — ${esc(r.name)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      ${PERM_KEYS.map((k) => `<label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;"><input type="checkbox" id="perm_${k}" ${r.perms[k] ? 'checked' : ''} /> ${permLabel(k)}</label>`).join("")}
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="savePerms('${escArg(affectationId)}')">${iconCheck()} Enregistrer</button></div>
+    `);
   }
-  window.savePerms = function savePerms(id) {
-    const r = RECEPTIONNISTES.find((x) => x.id===id); if (!r) return;
-    ["agenda","gererRdv","gererPlanning","gererParametres"].forEach((k) => r.perms[k] = document.getElementById("perm_"+k).checked);
-    closeModal(); renderReceptionnistesContainer();
-    showToast("Autorisations mises à jour");
-    addNotif("perms", `Autorisations mises à jour pour <b>${r.name}</b>`);
+  window.savePerms = async function savePerms(affectationId) {
+    const data = {};
+    PERM_KEYS.forEach((k) => { data[k] = document.getElementById("perm_" + k).checked; });
+    try {
+      await professionnelApi.updatePermissions(affectationId, data);
+      closeModal();
+      showToast("Autorisations mises à jour");
+      await refreshAll(true);
+    } catch (e) { showError(e); }
   }
 
   /* =========================================================
-     PAGE : STATISTIQUES
+     PAGE : STATISTIQUES — chiffres calculés par le serveur
      ========================================================= */
   window.renderStatsPage = function renderStatsPage() {
-    const total = APPTS.length, termines = APPTS.filter(a=>a.status==="termine").length, annules = APPTS.filter(a=>a.status==="annule").length;
-    const clients = uniqueClients();
-    const serviceCounts = {};
-    APPTS.forEach((a) => { if (a.status !== "annule") serviceCounts[a.service] = (serviceCounts[a.service]||0)+1; });
-    const topServices = Object.entries(serviceCounts).sort((a,b) => b[1]-a[1]);
-    const maxCount = topServices.length ? topServices[0][1] : 1;
+    const s = STATS || {};
+    const total = s.total ?? 0;
+    const nomService = (id) => SERVICES.find((x) => x.id === id)?.nom || "Service supprimé";
+    const parService = (s.parService || [])
+      .map((x) => ({ nom: nomService(x.serviceId), total: x._count?._all ?? 0 }))
+      .sort((a, b) => b.total - a.total);
+    const maxCount = parService.length ? parService[0].total : 1;
     document.getElementById("page-stats").innerHTML = `
-      <div class="filter-row">
-        <select style="border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:12.5px;"><option>Cette semaine</option><option>Ce mois</option><option selected>Toutes périodes</option><option>Période personnalisée</option></select>
-      </div>
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-value">${total}</div><div class="stat-label">Rendez-vous</div></div>
-        <div class="stat-card"><div class="stat-value">${termines}</div><div class="stat-label">Terminés</div></div>
-        <div class="stat-card"><div class="stat-value">${annules}</div><div class="stat-label">Annulés</div></div>
-        <div class="stat-card"><div class="stat-value">${clients.length}</div><div class="stat-label">Clients total</div></div>
-        <div class="stat-card"><div class="stat-value">${Math.round((termines/(total||1))*100)}%</div><div class="stat-label">Taux d'occupation</div></div>
+        <div class="stat-card"><div class="stat-value">${s.termines ?? 0}</div><div class="stat-label">Terminés</div></div>
+        <div class="stat-card"><div class="stat-value">${s.annules ?? 0}</div><div class="stat-label">Annulés</div></div>
+        <div class="stat-card"><div class="stat-value">${s.nbClients ?? 0}</div><div class="stat-label">Clients total</div></div>
+        <div class="stat-card"><div class="stat-value">${total ? Math.round(((s.termines ?? 0) / total) * 100) : 0}%</div><div class="stat-label">Part de rendez-vous honorés</div></div>
       </div>
       <div class="card" style="padding:20px;">
         <h3 style="margin:0 0 16px;font-size:14.5px;">Services les plus réservés</h3>
-        ${topServices.map(([name,count]) => `<div style="margin-bottom:12px;">
-          <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px;"><span>${name}</span><b>${count}</b></div>
-          <div style="background:var(--paper);border-radius:999px;height:8px;overflow:hidden;"><div style="width:${(count/maxCount)*100}%;background:var(--primary);height:100%;"></div></div>
-        </div>`).join("") || `<div class="table-empty">Pas encore de données</div>`}
+        ${parService.length ? parService.map((x) => `<div style="margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px;"><span>${esc(x.nom)}</span><b>${x.total}</b></div>
+          <div style="background:var(--paper);border-radius:999px;height:8px;overflow:hidden;"><div style="width:${(x.total / maxCount) * 100}%;background:var(--primary);height:100%;"></div></div>
+        </div>`).join("") : `<div class="table-empty">Aucune réservation enregistrée</div>`}
       </div>
     `;
   }
 
   /* =========================================================
-     PAGE : ASSISTANT IA (chat mock, basé sur les données réelles)
+     PAGE : ASSISTANT — les réponses viennent du backend
      ========================================================= */
-  let CHAT = [{ role: "bot", text: "Bonjour Dr. Benali. Je peux résumer votre agenda, retrouver un client ou un rendez-vous, ou faire le point sur votre activité. Que souhaitez-vous savoir ?" }];
+  let CHAT = [];
   window.renderAssistantPage = function renderAssistantPage() {
+    if (!CHAT.length) {
+      CHAT = [{ role: "bot", text: "Posez-moi une question sur vos horaires, vos services, la prise de rendez-vous ou votre adresse." }];
+    }
     document.getElementById("page-assistant").innerHTML = `
       <div class="card" style="display:flex;flex-direction:column;height:520px;">
         <div id="chatLog" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px;"></div>
         <div style="border-top:1px solid var(--line);padding:14px 16px;display:flex;gap:10px;">
-          <input type="text" id="chatInput" placeholder="Ex. « Combien de rendez-vous aujourd'hui ? »" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13px;" onkeydown="if(event.key==='Enter')sendChat()" />
-          <button class="btn btn-primary" onclick="sendChat()">${iconSend()}</button>
+          <input type="text" id="chatInput" placeholder="Ex. « Quels services proposez-vous ? »" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13px;" onkeydown="if(event.key==='Enter')sendChat()" />
+          <button class="btn btn-primary" id="chatSend" onclick="sendChat()">${iconSend()}</button>
         </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-        ${["Rendez-vous aujourd'hui","Mes prochains rendez-vous","Services les plus réservés","Clients à absences répétées"].map((q) => `<button class="btn btn-ghost btn-sm" onclick="quickChat('${q}')">${q}</button>`).join("")}
+        ${["Quels sont vos horaires ?", "Quels services proposez-vous ?", "Comment prendre rendez-vous ?", "Où êtes-vous situé ?"].map((q) => `<button class="btn btn-ghost btn-sm" onclick="quickChat('${escArg(q)}')">${esc(q)}</button>`).join("")}
       </div>
     `;
     renderChatLog();
@@ -1112,63 +1463,53 @@ export default function ProfessionnelDashboard() {
     const log = document.getElementById("chatLog");
     if (!log) return;
     log.innerHTML = CHAT.map((m) => `
-      <div style="display:flex;gap:10px;${m.role==='user'?'flex-direction:row-reverse;':''}">
-        <div class="avatar-sm" style="background:${m.role==='bot'?'var(--primary)':'#E2954A'};flex-shrink:0;">${m.role==='bot'?iconBot():initials(ME.name)}</div>
-        <div style="background:${m.role==='bot'?'var(--paper)':'var(--primary-tint)'};border-radius:12px;padding:10px 14px;font-size:12.5px;line-height:1.5;max-width:75%;">${m.text}</div>
+      <div style="display:flex;gap:10px;${m.role === 'user' ? 'flex-direction:row-reverse;' : ''}">
+        <div class="avatar-sm" style="background:${m.role === 'bot' ? 'var(--primary)' : '#E2954A'};flex-shrink:0;">${m.role === 'bot' ? iconBot() : esc(ME.initials)}</div>
+        <div style="background:${m.role === 'bot' ? 'var(--paper)' : 'var(--primary-tint)'};border-radius:12px;padding:10px 14px;font-size:12.5px;line-height:1.5;max-width:75%;">${esc(m.text)}</div>
       </div>`).join("");
-    log.scrollTop = 999999;
+    log.scrollTop = log.scrollHeight;
   }
   window.quickChat = function quickChat(q) { const el = document.getElementById("chatInput"); if (el) el.value = q; sendChat(); }
-  window.sendChat = function sendChat() {
+  window.sendChat = async function sendChat() {
     const input = document.getElementById("chatInput");
     if (!input) return;
-    const q = input.value.trim(); if (!q) return;
-    CHAT.push({ role: "user", text: q }); input.value = "";
-    CHAT.push({ role: "bot", text: answerAssistant(q) });
+    const q = input.value.trim();
+    if (!q) return;
+    CHAT.push({ role: "user", text: q });
+    input.value = "";
     renderChatLog();
-  }
-  window.answerAssistant = function answerAssistant(q) {
-    const ql = q.toLowerCase();
-    if (ql.includes("aujourd")) {
-      const t = APPTS.filter((a) => a.date===TODAY && a.status!=="annule");
-      return t.length ? `Vous avez <b>${t.length}</b> rendez-vous aujourd'hui : ${t.map(a=>`${a.start} ${a.client}`).join(", ")}.` : "Aucun rendez-vous prévu aujourd'hui.";
+    const btn = document.getElementById("chatSend");
+    if (btn) btn.disabled = true;
+    try {
+      const res = await assistantApi.ask(q, ME.id);
+      CHAT.push({ role: "bot", text: res.answer });
+    } catch (e) {
+      CHAT.push({ role: "bot", text: "La réponse n'a pas pu être obtenue. Réessayez dans un instant." });
     }
-    if (ql.includes("prochain")) {
-      const up = APPTS.filter((a) => a.date>TODAY && a.status==="reserve").sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start)).slice(0,5);
-      return up.length ? `Vos prochains rendez-vous : ` + up.map(a=>`${fmtDateShort(a.date)} à ${a.start} — ${a.client}`).join(" · ") : "Aucun rendez-vous à venir programmé.";
-    }
-    if (ql.includes("service")) {
-      const counts = {}; APPTS.forEach((a) => { if (a.status!=="annule") counts[a.service]=(counts[a.service]||0)+1; });
-      const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-      return top.length ? `Le service le plus réservé est « <b>${top[0][0]}</b> » avec ${top[0][1]} rendez-vous.` : "Pas encore assez de données sur vos services.";
-    }
-    if (ql.includes("absen")) {
-      return "La détection des absences répétées est disponible dans l'espace Réceptionniste ; aucun de vos clients n'a encore atteint le seuil configuré.";
-    }
-    if (ql.includes("client")) {
-      return `Vous suivez actuellement <b>${uniqueClients().length}</b> clients.`;
-    }
-    if (ql.includes("annul")) {
-      const c = APPTS.filter((a) => a.status==="annule").length;
-      return `${c} rendez-vous ont été annulés au total.`;
-    }
-    return "Je peux vous renseigner sur vos rendez-vous, vos clients, vos services ou votre activité récente — pouvez-vous préciser votre question ?";
+    if (btn) btn.disabled = false;
+    renderChatLog();
   }
 
   /* =========================================================
      PAGE : NOTIFICATIONS
      ========================================================= */
   window.notifRowHtml = function notifRowHtml(n) {
-    const ic = NOTIF_ICONS[n.type];
-    return `<div class="notif-row ${n.unread?'unread':''}"><div class="notif-icon" style="background:${ic.bg};color:${ic.color}">${svg(ic.svg,16)}</div><div class="notif-text"><span>${n.text}</span><div class="notif-time">${n.time}</div></div>${n.unread?`<span class="notif-dot-unread"></span>`:""}</div>`;
+    const ic = NOTIF_STYLE[n.type] || NOTIF_FALLBACK;
+    return `<div class="notif-row ${n.unread ? 'unread' : ''}"><div class="notif-icon" style="background:${ic.bg};color:${ic.color}">${svg(ic.svg, 16)}</div><div class="notif-text"><span>${n.text}</span><div class="notif-time">${n.time}</div></div>${n.unread ? `<span class="notif-dot-unread"></span>` : ""}</div>`;
   }
   window.renderNotifsPage = function renderNotifsPage() {
     document.getElementById("page-notifs").innerHTML = `
-      <div class="card">${NOTIFS.map((n) => notifRowHtml(n)).join("")}</div>
+      <div class="card">${NOTIFS.length ? NOTIFS.map((n) => notifRowHtml(n)).join("") : `<div class="table-empty">Aucune notification</div>`}</div>
     `;
   }
-  window.markAllRead = function markAllRead() { NOTIFS.forEach((n) => n.unread=false); renderNotifsPage(); updateNotifBadges(); }
-  window.addNotif = function addNotif(type, text) { NOTIFS.unshift({ id: Date.now(), type, text, time: "À l'instant", unread: true }); updateNotifBadges(); }
+  window.markAllRead = async function markAllRead() {
+    try {
+      await notificationsApi.markAllRead();
+      NOTIFS = NOTIFS.map((n) => ({ ...n, unread: false }));
+      renderNotifsPage();
+      updateNotifBadges();
+    } catch (e) { showError(e); }
+  }
 
   /* =========================================================
      PAGE : PROFIL
@@ -1176,21 +1517,42 @@ export default function ProfessionnelDashboard() {
   window.renderProfilPage = function renderProfilPage() {
     document.getElementById("page-profil").innerHTML = `
       <div class="card" style="padding:22px;max-width:560px;">
-        <div class="field-row"><label>Nom du professionnel / bureau</label><input type="text" id="prName" value="${PROFILE.name}" /></div>
-        <div class="field-row"><label>Description</label><textarea id="prDesc" rows="3">${PROFILE.desc}</textarea></div>
-        <div class="field-row"><label>Adresse</label><input type="text" id="prAddress" value="${PROFILE.address}" /></div>
+        <div class="field-row"><label>Nom du professionnel / bureau *</label><input type="text" id="prName" value="${esc(PROFILE.nom)}" /></div>
+        <div class="field-row"><label>Fonction / spécialité</label><input type="text" id="prSpecialite" value="${esc(PROFILE.specialite)}" /></div>
+        <div class="field-row"><label>Description</label><textarea id="prDesc" rows="3">${esc(PROFILE.description)}</textarea></div>
+        <div class="field-row"><label>Adresse</label><input type="text" id="prAddress" value="${esc(PROFILE.adresse)}" /></div>
         <div class="field-2col">
-          <div class="field-row"><label>Téléphone</label><input type="text" id="prPhone" value="${PROFILE.phone}" /></div>
-          <div class="field-row"><label>E-mail</label><input type="email" id="prEmail" value="${PROFILE.email}" /></div>
+          <div class="field-row"><label>Téléphone</label><input type="text" id="prPhone" value="${esc(PROFILE.telephone)}" /></div>
+          <div class="field-row"><label>E-mail du compte</label><input type="email" value="${esc(PROFILE.email)}" disabled /></div>
         </div>
-        <div class="field-row"><label>Photo du bureau</label><div style="border:1.5px dashed var(--line);border-radius:10px;padding:20px;text-align:center;font-size:12px;color:var(--ink-soft);">Glissez une image ou cliquez pour téléverser</div></div>
+        <div class="field-row"><label>URL de la photo du bureau</label><input type="text" id="prPhoto" value="${esc(PROFILE.photoUrl)}" placeholder="https://…" /></div>
+        <div class="field-hint" style="margin-bottom:12px;">L'e-mail du compte est modifié par l'administrateur.</div>
+        <div class="field-error" id="prError"></div>
         <button class="btn btn-primary" onclick="saveProfile()">${iconCheck()} Enregistrer les modifications</button>
       </div>
     `;
   }
-  window.saveProfile = function saveProfile() {
-    PROFILE = { name: document.getElementById("prName").value, desc: document.getElementById("prDesc").value, address: document.getElementById("prAddress").value, phone: document.getElementById("prPhone").value, email: document.getElementById("prEmail").value };
-    showToast("Profil mis à jour");
+  window.saveProfile = async function saveProfile() {
+    const err = document.getElementById("prError");
+    const nom = val("prName");
+    if (!nom) { err.textContent = "Le nom est requis."; err.classList.add("show"); return; }
+    err.classList.remove("show");
+    try {
+      await professionnelApi.updateProfil({
+        nom,
+        specialite: val("prSpecialite"),
+        description: val("prDesc"),
+        adresse: val("prAddress"),
+        telephone: val("prPhone"),
+        photoUrl: val("prPhoto"),
+      });
+      showToast("Profil mis à jour");
+      await refreshAll(true);
+    } catch (e) {
+      const msg = e?.response?.data?.message || "L'enregistrement a échoué.";
+      err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
+      err.classList.add("show");
+    }
   }
 
   /* =========================================================
@@ -1205,246 +1567,245 @@ export default function ProfessionnelDashboard() {
   window.openModal = function openModal(innerHtml, wide) {
     const root = document.getElementById("modalRoot");
     if (!root) return;
-    root.innerHTML = `<div class="modal-overlay" id="activeOverlay"><div class="modal-box ${wide?'wide':''}">${innerHtml}</div></div>`;
+    root.innerHTML = `<div class="modal-overlay" id="activeOverlay"><div class="modal-box ${wide ? 'wide' : ''}">${innerHtml}</div></div>`;
     const ov = document.getElementById("activeOverlay");
     requestAnimationFrame(() => ov.classList.add("open"));
     ov.addEventListener("click", (e) => { if (e.target === ov) closeModal(); });
   }
 
-  /* ---- Nouveau rendez-vous (créé directement par le Pro depuis l'agenda) ---- */
+  /* ---- Nouveau rendez-vous : créneaux réellement libres ---- */
   window.openNewRdv = function openNewRdv(prefill) {
     prefill = prefill || {};
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">Nouveau rendez-vous</p><p class="modal-sub">Sélectionnez la date, le créneau et le client</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="detect-banner" id="detectBanner"></div>
+    const publies = SERVICES.filter((s) => s.actif);
+    if (!publies.length) { showToast("Publiez d'abord un service pour pouvoir créer un rendez-vous."); return; }
+    state.newRdv = { serviceId: publies[0].id, date: prefill.date || state.agendaDate, start: prefill.start || "", dateDebut: "", creneaux: [] };
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Nouveau rendez-vous</p><p class="modal-sub">Sélectionnez le service, la date et un créneau libre</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
       <div class="field-2col">
-        <div class="field-row"><label>Nom du client</label><input type="text" id="nrName" oninput="detectClient()" placeholder="Karim Yacine" /></div>
-        <div class="field-row"><label>Téléphone</label><input type="tel" id="nrTel" oninput="detectClient()" placeholder="0555 00 00 00" /></div>
+        <div class="field-row"><label>Nom du client *</label><input type="text" id="nrNom" /></div>
+        <div class="field-row"><label>Prénom du client *</label><input type="text" id="nrPrenom" /></div>
       </div>
-      <div class="field-row"><label>Service</label><select id="nrService">${SERVICES.filter(s=>s.status==='active').map((s) => `<option value="${s.name}">${s.name} — ${s.duration} min</option>`).join("")}</select></div>
       <div class="field-2col">
-        <div class="field-row"><label>Date</label><input type="date" id="nrDate" value="${prefill.date || state.agendaDate}" /></div>
-        <div class="field-row"><label>Créneau</label><input type="time" id="nrTime" value="${prefill.start || '09:00'}" /></div>
+        <div class="field-row"><label>Téléphone *</label><input type="tel" id="nrTel" /></div>
+        <div class="field-row"><label>E-mail</label><input type="email" id="nrEmail" /></div>
       </div>
-      <div class="field-error" id="nrError">Merci de renseigner le nom, le téléphone et le créneau.</div>
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitNewRdv()">${iconCheck()} Confirmer le rendez-vous</button></div>
-    `;
-    openModal(html);
+      <div class="field-row"><label>Date de naissance</label><input type="date" id="nrDob" /></div>
+      <div class="field-row"><label>Service *</label><select id="nrService" onchange="onNewRdvServiceChange(this.value)">${publies.map((s) => `<option value="${esc(s.id)}">${esc(s.nom)} — ${s.dureeMinutes} min</option>`).join("")}</select></div>
+      <div class="field-row"><label>Date *</label><input type="date" id="nrDate" value="${esc(state.newRdv.date)}" onchange="onNewRdvDateChange(this.value)" /></div>
+      <div class="field-row"><label>Créneau disponible *</label><div id="nrSlots"><div class="table-empty">Chargement…</div></div></div>
+      <div class="field-row"><label>Remarque</label><textarea id="nrRemarque" rows="2"></textarea></div>
+      <div class="field-error" id="nrError"></div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" id="nrSubmit" onclick="submitNewRdv()">${iconCheck()} Confirmer le rendez-vous</button></div>
+    `, true);
+    loadNewRdvSlots();
   }
-  window.detectClient = function detectClient() {
-    const name = document.getElementById("nrName").value.trim();
-    const tel = document.getElementById("nrTel").value.trim();
-    const banner = document.getElementById("detectBanner");
-    const existing = uniqueClients().find((c) => (tel.length>=6 && c.phone.replace(/\s/g,"")===tel.replace(/\s/g,"")) || (name && c.name.toLowerCase()===name.toLowerCase()));
-    if (existing) { banner.innerHTML = `${iconCheck()} Client existant : <b>${existing.name}</b> (${existing.appts.length} rendez-vous précédents)`; banner.classList.add("show"); }
-    else banner.classList.remove("show");
+  window.onNewRdvServiceChange = function onNewRdvServiceChange(id) { state.newRdv.serviceId = id; loadNewRdvSlots(); }
+  window.onNewRdvDateChange = function onNewRdvDateChange(d) { state.newRdv.date = d; loadNewRdvSlots(); }
+  // Les créneaux proposés sont ceux calculés par le backend (disponibilités,
+  // fermetures et rendez-vous déjà pris) : aucune grille horaire inventée.
+  window.loadNewRdvSlots = async function loadNewRdvSlots() {
+    const { serviceId, date } = state.newRdv;
+    state.newRdv.dateDebut = "";
+    if (!serviceId || !date) { renderNewRdvSlots([], "Choisissez un service et une date."); return; }
+    renderNewRdvSlots([], "Chargement des créneaux…");
+    try {
+      const res = await publicApi.getSlots(ME.id, serviceId, date);
+      state.newRdv.creneaux = res.creneaux || [];
+      renderNewRdvSlots(state.newRdv.creneaux, "Aucun créneau disponible ce jour-là.");
+    } catch (e) {
+      state.newRdv.creneaux = [];
+      renderNewRdvSlots([], "Créneaux indisponibles pour cette date.");
+    }
   }
-  window.submitNewRdv = function submitNewRdv() {
-    const client = document.getElementById("nrName").value.trim();
-    const phone = document.getElementById("nrTel").value.trim();
-    const service = document.getElementById("nrService").value;
-    const date = document.getElementById("nrDate").value;
-    const start = document.getElementById("nrTime").value;
-    if (!client || !phone || !start) { document.getElementById("nrError").classList.add("show"); return; }
-    const svc = SERVICES.find((s) => s.name===service);
-    const [sh,sm] = start.split(":").map(Number);
-    const endTotal = sh*60+sm+(svc?svc.duration:30);
-    const end = String(Math.floor(endTotal/60)).padStart(2,"0")+":"+String(endTotal%60).padStart(2,"0");
-    const existing = uniqueClients().find((c) => c.name.toLowerCase()===client.toLowerCase());
-    APPTS.push({ id: uid("a"), client, phone, dob: existing?existing.dob:"1990-01-01", email: existing?existing.email:client.toLowerCase().replace(/\s/g,".")+"@mail.com", service, date, start, end, status: "reserve", remark: "", createdAt: TODAY, source: "professionnel" });
-    closeModal();
-    showToast(`Rendez-vous créé pour <b>${client}</b> le ${fmtDateShort(date)} à ${start}`);
-    renderPage(state.page);
+  window.renderNewRdvSlots = function renderNewRdvSlots(creneaux, emptyMsg) {
+    const box = document.getElementById("nrSlots");
+    if (!box) return;
+    if (!creneaux.length) { box.innerHTML = `<div class="table-empty">${esc(emptyMsg)}</div>`; return; }
+    const prefer = creneaux.find((c) => toHM(c) === state.newRdv.start) || creneaux[0];
+    box.innerHTML = `<div class="slot-menu" id="nrSlotMenu">${creneaux.map((c) => `<button type="button" data-iso="${esc(c)}" class="${c === prefer ? 'current' : ''}" onclick="pickSlot('${escArg(c)}')">${toHM(c)}</button>`).join("")}</div>`;
+    state.newRdv.dateDebut = prefer;
+  }
+  window.pickSlot = function pickSlot(iso) {
+    state.newRdv.dateDebut = iso;
+    document.querySelectorAll("#nrSlotMenu button").forEach((b) => b.classList.toggle("current", b.dataset.iso === iso));
+  }
+  window.submitNewRdv = async function submitNewRdv() {
+    const err = document.getElementById("nrError");
+    const nom = val("nrNom"), prenom = val("nrPrenom"), tel = val("nrTel").replace(/\s/g, "");
+    const { serviceId, dateDebut } = state.newRdv;
+    if (!nom || !prenom || !tel || !serviceId || !dateDebut) {
+      err.textContent = "Renseignez le nom, le prénom, le téléphone, le service et un créneau disponible.";
+      err.classList.add("show");
+      return;
+    }
+    err.classList.remove("show");
+    const btn = document.getElementById("nrSubmit");
+    btn.disabled = true;
+    try {
+      // La création publique est la seule route de création : le backend y
+      // applique le même contrôle de disponibilité que pour un client.
+      await publicApi.createRdv({
+        professionnelId: ME.id,
+        serviceId,
+        dateDebut,
+        nom, prenom,
+        telephone: tel,
+        email: val("nrEmail") || undefined,
+        dateNaissance: val("nrDob") || undefined,
+        remarque: val("nrRemarque") || undefined,
+      });
+      closeModal();
+      showToast(`Rendez-vous créé pour <b>${esc(prenom + " " + nom)}</b> le ${fmtDateShort(state.newRdv.date)} à ${toHM(dateDebut)}`);
+      await refreshAll(true);
+    } catch (e) {
+      btn.disabled = false;
+      const msg = e?.response?.data?.message || "La création du rendez-vous a échoué.";
+      err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
+      err.classList.add("show");
+      if (e?.response?.status === 409) loadNewRdvSlots();
+    }
   }
 
-  /* ---- Consulter / annuler un rendez-vous ---- */
+  /* ---- Consulter / faire évoluer un rendez-vous ---- */
   window.openRdvDetail = function openRdvDetail(id) {
-    const a = APPTS.find((x) => x.id===id); if (!a) return;
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">${a.client}</p><p class="modal-sub">${a.service}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+    const a = APPTS.find((x) => x.id === id);
+    if (!a) return;
+    const suivants = TRANSITIONS[a.status] || [];
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">${esc(a.client)}</p><p class="modal-sub">${esc(a.service)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
       <div class="detail-grid">
-        <div><div class="detail-item-label">Téléphone</div><div class="detail-item-value">${a.phone}</div></div>
-        <div><div class="detail-item-label">E-mail</div><div class="detail-item-value">${a.email}</div></div>
+        <div><div class="detail-item-label">Téléphone</div><div class="detail-item-value">${esc(a.phone)}</div></div>
+        <div><div class="detail-item-label">E-mail</div><div class="detail-item-value">${esc(a.email || "—")}</div></div>
         <div><div class="detail-item-label">Date</div><div class="detail-item-value">${fmtDateShort(a.date)}</div></div>
-        <div><div class="detail-item-label">Heure</div><div class="detail-item-value">${a.start} – ${a.end}</div></div>
-        <div><div class="detail-item-label">Origine</div><div class="detail-item-value" style="text-transform:capitalize">${a.source}</div></div>
+        <div><div class="detail-item-label">Heure</div><div class="detail-item-value">${esc(a.start)} – ${esc(a.end)}</div></div>
+        <div><div class="detail-item-label">Origine</div><div class="detail-item-value">${esc(a.source)}</div></div>
         <div><div class="detail-item-label">Statut</div><div class="detail-item-value"><span class="status-pill ${STATUS[a.status].cls}">${STATUS[a.status].label}</span></div></div>
       </div>
-      ${a.remark ? `<div class="field-row"><label>Remarque</label><div style="font-size:12.5px;color:var(--ink-soft)">${a.remark}</div></div>` : ""}
+      ${a.remark ? `<div class="field-row"><label>Remarque du client</label><div style="font-size:12.5px;color:var(--ink-soft)">${esc(a.remark)}</div></div>` : ""}
+      ${a.motif ? `<div class="field-row"><label>Motif d'annulation</label><div style="font-size:12.5px;color:var(--ink-soft)">${esc(a.motif)}</div></div>` : ""}
+      ${suivants.length ? `
+        <div class="detail-item-label" style="margin:14px 0 8px;">Changer le statut</div>
+        <div class="slot-menu">${suivants.filter((k) => k !== "ANNULE").map((k) => `<button type="button" onclick="changeStatus('${escArg(a.id)}','${k}')">${STATUS[k].label}</button>`).join("")}</div>`
+        : `<div class="detail-item-label" style="margin:14px 0 8px;">Ce rendez-vous est clos : plus aucun changement de statut n'est possible.</div>`}
       <div class="modal-actions" style="justify-content:space-between;">
         <div style="display:flex;gap:8px;">
-          ${a.status==="reserve" ? `<button class="btn btn-ghost btn-sm" onclick="markTermine('${a.id}')">${iconCheck()} Marquer terminé</button>` : ""}
+          ${a.status === "RESERVE" ? `<button class="btn btn-ghost btn-sm" onclick="openMoveRdv('${escArg(a.id)}')">${iconEdit()} Déplacer</button>` : ""}
         </div>
-        ${a.status==="reserve" ? `<button class="btn btn-danger-ghost btn-sm" onclick="openCancelForm('${a.id}')">${iconX()} Annuler</button>` : ""}
+        ${suivants.includes("ANNULE") ? `<button class="btn btn-danger-ghost btn-sm" onclick="openCancelForm('${escArg(a.id)}')">${iconX()} Annuler</button>` : ""}
       </div>
-    `;
-    openModal(html);
+    `);
   }
-  window.markTermine = function markTermine(id) { const a = APPTS.find((x) => x.id===id); if (!a) return; a.status="termine"; closeModal(); showToast("Rendez-vous marqué comme terminé"); renderPage(state.page); }
+  window.changeStatus = async function changeStatus(id, statut) {
+    try {
+      await appointmentsApi.updateStatus(id, statut);
+      showToast(`Statut mis à jour : <b>${STATUS[statut].label}</b>`);
+      await loadAll();
+      renderPage(state.page);
+      openRdvDetail(id);
+    } catch (e) { showError(e); }
+  }
   window.openCancelForm = function openCancelForm(id) {
-    const a = APPTS.find((x) => x.id===id); if (!a) return;
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">Annuler le rendez-vous</p><p class="modal-sub">${a.client}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+    const a = APPTS.find((x) => x.id === id);
+    if (!a) return;
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Annuler le rendez-vous</p><p class="modal-sub">${esc(a.client)} — ${fmtDateShort(a.date)} à ${esc(a.start)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
       <div class="field-row"><label>Motif (obligatoire)</label><select id="cancelMotif"><option>Indisponibilité exceptionnelle</option><option>Fermeture du bureau</option><option>Problème professionnel</option><option>Modification du planning</option><option>Erreur de réservation</option><option>Autre motif</option></select></div>
-      <div class="field-hint">Le client sera informé de l'annulation par e-mail, avec le motif.</div>
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="openRdvDetail('${a.id}')">Retour</button><button class="btn btn-danger-ghost" onclick="confirmCancel('${a.id}')">${iconCheck()} Confirmer l'annulation</button></div>
-    `;
-    openModal(html);
+      <div class="field-hint">Le client est informé de l'annulation avec le motif.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="openRdvDetail('${escArg(id)}')">Retour</button><button class="btn btn-danger-ghost" onclick="confirmCancel('${escArg(id)}')">${iconCheck()} Confirmer l'annulation</button></div>
+    `);
   }
-  window.confirmCancel = function confirmCancel(id) {
-    const a = APPTS.find((x) => x.id===id); if (!a) return;
-    a.status = "annule"; a.remark = document.getElementById("cancelMotif").value;
-    closeModal(); showToast(`Rendez-vous annulé — motif : ${a.remark}`);
-    addNotif("cancel", `Rendez-vous de <b>${a.client}</b> annulé (${a.remark})`);
-    renderPage(state.page);
+  window.confirmCancel = async function confirmCancel(id) {
+    try {
+      await appointmentsApi.updateStatus(id, "ANNULE", val("cancelMotif") || undefined);
+      closeModal();
+      showToast("Rendez-vous annulé");
+      await refreshAll(true);
+    } catch (e) { showError(e); }
+  }
+  window.openMoveRdv = function openMoveRdv(id) {
+    const a = APPTS.find((x) => x.id === id);
+    if (!a) return;
+    state.newRdv = { serviceId: a.serviceId, date: a.date, start: a.start, dateDebut: "", creneaux: [] };
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Déplacer le rendez-vous</p><p class="modal-sub">${esc(a.client)} · ${esc(a.service)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <p style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px;">Le client et le service restent inchangés : seul le créneau change, parmi ceux réellement libres.</p>
+      <div class="field-row"><label>Date</label><input type="date" id="mvDate" value="${esc(a.date)}" onchange="onNewRdvDateChange(this.value)" /></div>
+      <div class="field-row"><label>Créneau disponible</label><div id="nrSlots"><div class="table-empty">Chargement…</div></div></div>
+      <div class="field-error" id="mvError"></div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="openRdvDetail('${escArg(id)}')">Retour</button><button class="btn btn-primary" onclick="saveMoveRdv('${escArg(id)}')">${iconCheck()} Enregistrer</button></div>
+    `);
+    loadNewRdvSlots();
+  }
+  window.saveMoveRdv = async function saveMoveRdv(id) {
+    const err = document.getElementById("mvError");
+    if (!state.newRdv.dateDebut) { err.textContent = "Choisissez un créneau disponible."; err.classList.add("show"); return; }
+    try {
+      await appointmentsApi.reschedule(id, state.newRdv.dateDebut);
+      closeModal();
+      showToast("Rendez-vous déplacé");
+      await refreshAll(true);
+    } catch (e) {
+      const msg = e?.response?.data?.message || "Le déplacement a échoué.";
+      err.textContent = Array.isArray(msg) ? msg.join(", ") : msg;
+      err.classList.add("show");
+      loadNewRdvSlots();
+    }
   }
 
   /* =========================================================
-     GLOBAL SEARCH + INIT
+     RECHERCHE GLOBALE + INIT
      ========================================================= */
-  document.getElementById("globalSearch")?.addEventListener("input", function() {
-    const q = this.value.trim(); if (q.length<2) return;
-    goToPage("clients"); setTimeout(() => { state.clientsFilters.search = q; renderClientsContainer(); }, 0);
+  document.getElementById("globalSearch")?.addEventListener("input", function () {
+    const q = this.value.trim();
+    if (q.length < 2) return;
+    state.clientsFilters.search = q;
+    goToPage("clients");
   }, { signal: ac.signal });
-  renderPage("dashboard");
+
+  // Rien n'est affiché avant la réponse du backend.
+  (async () => {
+    await loadAll();
+    if (ac.signal.aborted) return;
+    renderPage("dashboard");
+  })();
 
     // ---- end ported script ----
 
     return () => {
       ac.abort();
 
-      delete (window as any).todayISO;
-      delete (window as any).isoPlusDays;
-      delete (window as any).uid;
-      delete (window as any).fmtDateLong;
-      delete (window as any).fmtDateShort;
-      delete (window as any).capitalize;
-      delete (window as any).calcAge;
-      delete (window as any).initials;
-      delete (window as any).showToast;
-      delete (window as any).goToPage;
-      delete (window as any).renderPage;
-      delete (window as any).updateNotifBadges;
-      delete (window as any).svg;
-      delete (window as any).iconPlus;
-      delete (window as any).iconCal;
-      delete (window as any).iconCheck;
-      delete (window as any).iconCheckCircle;
-      delete (window as any).iconClock;
-      delete (window as any).iconX;
-      delete (window as any).iconUsers;
-      delete (window as any).iconChevronLeft;
-      delete (window as any).iconChevronRight;
-      delete (window as any).iconPrinter;
-      delete (window as any).iconEdit;
-      delete (window as any).iconEye;
-      delete (window as any).iconTrash;
-      delete (window as any).iconAlert;
-      delete (window as any).iconSend;
-      delete (window as any).iconBot;
-      delete (window as any).iconGrid;
-      delete (window as any).iconList;
-      delete (window as any).renderPageHead;
-      delete (window as any).renderDashboard;
-      delete (window as any).renderAgenda;
-      delete (window as any).agendaDateLabel;
-      delete (window as any).weekStart;
-      delete (window as any).agendaShift;
-      delete (window as any).agendaToday;
-      delete (window as any).setAgendaView;
-      delete (window as any).renderAgendaMain;
-      delete (window as any).dayViewHtml;
-      delete (window as any).placeDayAppts;
-      delete (window as any).handleDayColClick;
-      delete (window as any).weekViewHtml;
-      delete (window as any).monthViewHtml;
-      delete (window as any).jumpToDay;
-      delete (window as any).miniCalHtml;
-      delete (window as any).miniCalShift;
-      delete (window as any).renderRdvPage;
-      delete (window as any).updateRdvFilter;
-      delete (window as any).renderRdvTable;
-      delete (window as any).uniqueClients;
-      delete (window as any).renderClientsPage;
-      delete (window as any).updateClientsFilter;
-      delete (window as any).setClientsView;
-      delete (window as any).filteredClients;
-      delete (window as any).renderClientsContainer;
-      delete (window as any).renderClientsTable;
-      delete (window as any).renderClientsGrid;
-      delete (window as any).openClientFiche;
-      delete (window as any).rdvMiniRow;
-      delete (window as any).switchClientTab;
-      delete (window as any).noteRowHtml;
-      delete (window as any).addClientNote;
-      delete (window as any).deleteClientNote;
-      delete (window as any).renderServicesPage;
-      delete (window as any).updateServicesFilter;
-      delete (window as any).setServicesView;
-      delete (window as any).filteredServices;
-      delete (window as any).renderServicesContainer;
-      delete (window as any).renderServicesGrid;
-      delete (window as any).renderServicesListBody;
-      delete (window as any).toggleServiceStatus;
-      delete (window as any).deleteService;
-      delete (window as any).openServiceForm;
-      delete (window as any).switchServiceTab;
-      delete (window as any).cfFieldLabel;
-      delete (window as any).cfTypeLabel;
-      delete (window as any).renderCFList;
-      delete (window as any).deleteCFField;
-      delete (window as any).returnToServiceForm;
-      delete (window as any).openFieldEditor;
-      delete (window as any).renderFieldEditorModal;
-      delete (window as any).onCFTypeChange;
-      delete (window as any).updateCFDraft;
-      delete (window as any).cfConditionRowHtml;
-      delete (window as any).addCFCondition;
-      delete (window as any).removeCFCondition;
-      delete (window as any).updateCFCondition;
-      delete (window as any).saveCFField;
-      delete (window as any).saveService;
-      delete (window as any).renderDispoPage;
-      delete (window as any).toggleIndispoAccordion;
-      delete (window as any).toggleDayOn;
-      delete (window as any).editDayRanges;
-      delete (window as any).rangeRowHtml;
-      delete (window as any).addRangeRow;
-      delete (window as any).saveDayRanges;
-      delete (window as any).openIndispoForm;
-      delete (window as any).saveIndispo;
-      delete (window as any).notifyClientsIndispo;
-      delete (window as any).removeIndispo;
-      delete (window as any).renderReceptionnistesPage;
-      delete (window as any).updateReceptionnistesFilter;
-      delete (window as any).setReceptionnistesView;
-      delete (window as any).filteredReceptionnistes;
-      delete (window as any).renderReceptionnistesContainer;
-      delete (window as any).permLabel;
-      delete (window as any).toggleReceptionniste;
-      delete (window as any).openPermsForm;
-      delete (window as any).savePerms;
-      delete (window as any).renderStatsPage;
-      delete (window as any).renderAssistantPage;
-      delete (window as any).renderChatLog;
-      delete (window as any).quickChat;
-      delete (window as any).sendChat;
-      delete (window as any).answerAssistant;
-      delete (window as any).notifRowHtml;
-      delete (window as any).renderNotifsPage;
-      delete (window as any).markAllRead;
-      delete (window as any).addNotif;
-      delete (window as any).renderProfilPage;
-      delete (window as any).saveProfile;
-      delete (window as any).closeModal;
-      delete (window as any).openModal;
-      delete (window as any).openNewRdv;
-      delete (window as any).detectClient;
-      delete (window as any).submitNewRdv;
-      delete (window as any).openRdvDetail;
-      delete (window as any).markTermine;
-      delete (window as any).openCancelForm;
-      delete (window as any).confirmCancel;
+      [
+        "todayISO", "isoPlusDays", "esc", "escArg", "toDay", "toHM", "fmtDateLong", "fmtDateShort",
+        "fmtRelative", "capitalize", "calcAge", "initials", "fmtPrix", "val", "setText", "showToast", "showError",
+        "loadAll", "refreshAll", "champsDuService", "goToPage", "renderPage", "updateNotifBadges",
+        "svg", "iconPlus", "iconCal", "iconCheck", "iconCheckCircle", "iconClock", "iconX", "iconUsers",
+        "iconChevronLeft", "iconChevronRight", "iconPrinter", "iconEdit", "iconEye", "iconTrash",
+        "iconAlert", "iconSend", "iconBot", "iconGrid", "iconList", "iconRefresh",
+        "renderPageHead", "renderDashboard", "renderAgenda", "agendaDateLabel", "weekStart",
+        "agendaShift", "agendaToday", "setAgendaView", "renderAgendaMain", "dayViewHtml",
+        "placeDayAppts", "handleDayColClick", "weekViewHtml", "monthCells", "monthViewHtml",
+        "jumpToDay", "miniCalHtml", "miniCalShift", "renderRdvPage", "updateRdvFilter", "filteredRdv",
+        "renderRdvTable", "exportCsv", "exportRdvCsv", "apptsDuClient", "renderClientsPage",
+        "updateClientsFilter", "setClientsView", "filteredClients", "renderClientsContainer",
+        "clientCounts", "renderClientsTable", "renderClientsGrid", "openClientFiche", "rdvMiniRow",
+        "switchClientTab", "notesDuClient", "notesListHtml", "addClientNote", "deleteClientNote",
+        "renderServicesPage", "updateServicesFilter", "setServicesView", "filteredServices",
+        "renderServicesContainer", "renderServicesGrid", "renderServicesListBody", "toggleServiceActif",
+        "deleteServiceApi", "openServiceForm", "switchServiceTab", "saveService", "cfFieldLabel",
+        "cfTypeLabel", "renderCFList", "deleteCFField", "returnToServiceForm", "openFieldEditor",
+        "renderFieldEditorModal", "onCFTypeChange", "updateCFDraft", "cfConditionRowHtml",
+        "addCFCondition", "removeCFCondition", "updateCFCondition", "saveCFField", "disposDuJour",
+        "renderDispoPage", "toggleIndispoAccordion", "openAddDispo", "saveDispo", "removeDispo",
+        "openIndispoForm", "saveIndispo", "removeIndispo", "renderParamsCard", "saveParams",
+        "permLabel", "renderReceptionnistesPage", "updateReceptionnistesFilter",
+        "setReceptionnistesView", "filteredReceptionnistes", "renderReceptionnistesContainer",
+        "toggleReceptionniste", "openPermsForm", "savePerms", "renderStatsPage", "renderAssistantPage",
+        "renderChatLog", "quickChat", "sendChat", "notifRowHtml", "renderNotifsPage", "markAllRead",
+        "renderProfilPage", "saveProfile", "closeModal", "openModal", "openNewRdv",
+        "onNewRdvServiceChange", "onNewRdvDateChange", "loadNewRdvSlots", "renderNewRdvSlots",
+        "pickSlot", "submitNewRdv", "openRdvDetail", "changeStatus", "openCancelForm", "confirmCancel",
+        "openMoveRdv", "saveMoveRdv",
+      ].forEach((k) => { delete (window as any)[k]; });
     };
   }, []);
 
@@ -1714,6 +2075,11 @@ export default function ProfessionnelDashboard() {
   .field-hint { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
   .field-error { font-size: 11.5px; color: var(--st-annule); margin-top: 4px; display: none; }
   .field-error.show { display: block; }
+  /* Sélecteur de créneaux : les boutons listent les horaires réellement libres renvoyés par l'API. */
+  .slot-menu { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; max-height: 180px; overflow-y: auto; }
+  .slot-menu button { border: 1.5px solid var(--line); background: var(--card); border-radius: 9px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; color: var(--ink-soft); }
+  .slot-menu button:hover { border-color: var(--primary); color: var(--primary-dark); }
+  .slot-menu button.current { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-tint); }
   .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
   .detect-banner { background: var(--primary-tint); color: var(--primary-dark); font-size: 12px; font-weight: 600; padding: 10px 13px; border-radius: 10px; margin-bottom: 14px; display: none; align-items: center; gap: 8px; }
   .detect-banner.show { display: flex; }
@@ -1817,10 +2183,10 @@ export default function ProfessionnelDashboard() {
             <span className="tb-icon-dot" id="tbNotifDot">0</span>
           </button>
           <div className="tb-user">
-            <div className="tb-avatar" style={{background: 'linear-gradient(135deg,#8957FF,#6B3FD9)'}}>AB</div>
+            <div className="tb-avatar" id="tbAvatar" style={{background: 'linear-gradient(135deg,#8957FF,#6B3FD9)'}}></div>
             <div className="tb-user-text">
-              <div className="tb-user-name">Dr. Ahmed Benali</div>
-              <div className="tb-user-role">Professionnel · Médecin généraliste</div>
+              <div className="tb-user-name" id="tbUserName"></div>
+              <div className="tb-user-role" id="tbUserRole">Professionnel</div>
             </div>
           </div>
         </div>

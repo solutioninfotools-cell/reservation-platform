@@ -17,6 +17,11 @@ import { CreateRdvDto } from '../appointments/dto/create-rdv.dto';
 export class ReceptionnisteController {
   constructor(private rec: ReceptionnisteService) {}
 
+  @Get('moi')
+  moi(@CurrentUser() user: any) {
+    return this.rec.profilComplet(user.userId);
+  }
+
   @Get('affectations')
   affectations(@CurrentUser() user: any) {
     return this.rec.mesAffectations(user.userId);

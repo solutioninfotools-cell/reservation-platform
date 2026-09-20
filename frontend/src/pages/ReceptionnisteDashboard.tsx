@@ -158,6 +158,7 @@ export default function ReceptionnisteDashboard() {
     return APPTS.filter((a) => a.clientId === clientId && a.status === "ABSENT").length;
   }
   window.val = function val(id) { return (document.getElementById(id)?.value || "").trim(); }
+  window.setText = function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
   window.showToast = function showToast(msg) {
     const t = document.getElementById("toast");
     if (!t) return;
@@ -200,7 +201,13 @@ export default function ReceptionnisteDashboard() {
 
   window.loadAll = async function loadAll() {
     try {
-      const affectations = await receptionnisteApi.affectations();
+      const [moi, affectations] = await Promise.all([
+        receptionnisteApi.moi(),
+        receptionnisteApi.affectations(),
+      ]);
+      // Barre du haut : identité du compte connecté, jamais une valeur en dur.
+      setText("tbAvatar", initials(moi.nom));
+      setText("tbUserName", moi.nom);
       PROS = affectations.map((a) => ({
         id: a.professionnel.id,
         affectationId: a.id,
@@ -1311,7 +1318,7 @@ export default function ReceptionnisteDashboard() {
       [
         "todayISO", "isoPlusDays", "esc", "escArg", "toDay", "toHM", "toIso", "proById",
         "fmtDateLong", "fmtDateShort", "fmtRelative", "calcAge", "initials", "colorFor",
-        "absentCount", "val", "showToast", "showError", "peut", "peutGererUn",
+        "absentCount", "val", "setText", "showToast", "showError", "peut", "peutGererUn",
         "loadAll", "refreshAll", "goToPage", "renderPage", "updateNotifBadges",
         "renderDashboard", "nowHM", "renderAgenda", "agendaDateLabel", "capitalize", "weekStart",
         "agendaShift", "agendaToday", "setAgendaView", "setProFilter", "visiblePros",
@@ -1498,8 +1505,6 @@ export default function ReceptionnisteDashboard() {
   .day-col-head-name { font-size: 12.5px; font-weight: 700; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .day-col-head-role { font-size: 10.5px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .day-col-head-dot { width: 7px; height: 7px; border-radius: 50%; margin-left: auto; flex-shrink: 0; }
-  .day-col-add { display: flex; align-items: center; justify-content: center; gap: 5px; margin: 8px; border: 1.5px dashed var(--line); border-radius: 10px; background: none; color: var(--ink-soft); font-size: 11.5px; font-weight: 700; cursor: pointer; }
-  .day-col-add:hover { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-tint); }
 
   .day-grid-scroll { max-height: 620px; overflow-y: auto; }
   .day-grid-body { display: grid; position: relative; }
@@ -1515,14 +1520,7 @@ export default function ReceptionnisteDashboard() {
   }
   .day-col:hover { background-color: #FCFBFF; }
   .day-col.drop-hover { background-color: var(--primary-tint); }
-  .day-col-ghost { cursor: default; background-image: none; background: var(--paper); border-right: none; }
 
-  .lunch-band {
-    position: absolute; left: 0; right: 0; display: flex; align-items: center; justify-content: center;
-    font-size: 10.5px; font-weight: 700; color: var(--ink-soft); letter-spacing: .02em;
-    background: repeating-linear-gradient(45deg, #F1EFF7 0 6px, #E9E6F2 6px 12px);
-    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); z-index: 1;
-  }
 
   .appt-block {
     position: absolute; border-radius: 9px; padding: 6px 8px; overflow: hidden; cursor: pointer;
@@ -1725,9 +1723,9 @@ export default function ReceptionnisteDashboard() {
             <span className="tb-icon-dot" id="tbNotifDot">0</span>
           </button>
           <div className="tb-user">
-            <div className="tb-avatar">IB</div>
+            <div className="tb-avatar" id="tbAvatar"></div>
             <div className="tb-user-text">
-              <div className="tb-user-name">Imane B.</div>
+              <div className="tb-user-name" id="tbUserName"></div>
               <div className="tb-user-role">Réceptionniste</div>
             </div>
           </div>

@@ -7,6 +7,8 @@ import { adminApi } from '../api/admin.api';
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
+  // Identité affichée dans la barre du haut : celle du compte réellement connecté.
+  const account = useAuthStore((s) => s.user);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -633,7 +635,7 @@ export default function AdminDashboard() {
     const titre = role === "PROFESSIONNEL" ? "Nouveau professionnel" : role === "ADMIN" ? "Nouvel administrateur" : "Nouvelle réceptionniste";
     openModal(`
       <div class="modal-head"><div><p class="modal-title">${titre}</p><p class="modal-sub">Le compte est actif immédiatement (créé par l'administrateur)</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="field-row"><label>Nom complet *</label><input type="text" id="ncNom" placeholder="Ex. Dr. Ahmed Benali" /></div>
+      <div class="field-row"><label>Nom complet *</label><input type="text" id="ncNom" placeholder="Nom et prénom" /></div>
       <div class="field-2col">
         <div class="field-row"><label>E-mail *</label><input type="email" id="ncEmail" placeholder="nom@exemple.com" /></div>
         <div class="field-row"><label>Téléphone</label><input type="text" id="ncTel" /></div>
@@ -2116,8 +2118,8 @@ export default function AdminDashboard() {
             <span className="tb-icon-dot" id="tbNotifDot">0</span>
           </button>
           <div className="tb-user">
-            <div className="tb-avatar" style={{background: 'linear-gradient(135deg,#1B1730,#4A4460)'}}>AG</div>
-            <div className="tb-user-text"><div className="tb-user-name">Admin général</div><div className="tb-user-role">Administrateur</div></div>
+            <div className="tb-avatar" style={{background: 'linear-gradient(135deg,#1B1730,#4A4460)'}}>{(account?.email || '?').slice(0, 2).toUpperCase()}</div>
+            <div className="tb-user-text"><div className="tb-user-name">{account?.email || '—'}</div><div className="tb-user-role">Administrateur</div></div>
           </div>
         </div>
       </header>

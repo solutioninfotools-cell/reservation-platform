@@ -41,18 +41,22 @@ npm run dev                     # http://localhost:5173
 
 ---
 
-## Accès — comptes de démonstration
+## Première utilisation
 
-Mot de passe pour tous les comptes : **`Password123!`**
+La base ne contient aucune donnée de démonstration : tout est créé depuis
+l'application.
 
-| Rôle | E-mail |
-|---|---|
-| Admin | admin@rendezvousapp.com |
-| Professionnel | ahmed.benali@rendezvousapp.com |
-| Réceptionniste | imane.b@rendezvousapp.com |
+1. Ouvrez `http://localhost:5173/configuration` et suivez l'assistant de
+   configuration initiale (mode de supervision, domaine d'activité, premier
+   compte superviseur).
+2. Connectez-vous avec ce compte sur `http://localhost:5173/connexion`.
+3. Créez vos professionnels et réceptionnistes depuis l'espace Admin, puis vos
+   services et disponibilités depuis l'espace Professionnel — la page publique
+   n'affiche des créneaux qu'une fois ces disponibilités définies.
 
 Le Client n'a pas de compte : il réserve directement depuis la page publique
-(`http://localhost:5173`).
+(`http://localhost:5173`) et gère son rendez-vous via le lien unique remis à la
+confirmation (`/rdv/<token>`).
 
 ---
 

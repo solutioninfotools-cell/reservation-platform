@@ -18,6 +18,17 @@ export class ReceptionnisteService {
     return rec;
   }
 
+  /** Profil affiché dans l'espace Réceptionniste (l'e-mail vient du compte). */
+  async profilComplet(userId: string) {
+    const rec = await this.prisma.receptionniste.findUnique({
+      where: { userId },
+      include: { user: { select: { email: true, statutCompte: true } } },
+    });
+    if (!rec) throw new NotFoundException('Profil réceptionniste introuvable.');
+    const { user, ...reste } = rec;
+    return { ...reste, email: user.email, statutCompte: user.statutCompte };
+  }
+
   /** Liste les professionnels auxquels cette réceptionniste est affectée (avec ses permissions). */
   async mesAffectations(userId: string) {
     const rec = await this.findByUserId(userId);

@@ -1,6 +1,7 @@
 import { api } from './client';
 
 export const receptionnisteApi = {
+  moi: () => api.get('/receptionniste/moi').then((r) => r.data),
   affectations: () => api.get('/receptionniste/affectations').then((r) => r.data),
   detectClient: (params: { telephone?: string; nom?: string; dateNaissance?: string }) =>
     api.get('/receptionniste/detect-client', { params }).then((r) => r.data),

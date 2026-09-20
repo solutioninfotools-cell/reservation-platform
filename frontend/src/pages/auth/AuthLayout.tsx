@@ -248,15 +248,15 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
                 {role && (
                   <form onSubmit={submitRegister} className="space-y-3">
                     <Field label="Nom complet *">
-                      <Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder={role === 'PROFESSIONNEL' ? 'Dr. Ahmed Benali' : 'Imane B.'} />
+                      <Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Nom et prénom" />
                     </Field>
                     {role === 'PROFESSIONNEL' && (
                       <Field label="Spécialité / activité">
-                        <Input value={specialite} onChange={(e) => setSpecialite(e.target.value)} placeholder="Médecin généraliste" />
+                        <Input value={specialite} onChange={(e) => setSpecialite(e.target.value)} placeholder="Votre fonction ou spécialité" />
                       </Field>
                     )}
                     <Field label="Téléphone">
-                      <Input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="0555 10 20 30" />
+                      <Input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="Numéro de téléphone" />
                     </Field>
                     <Field label="Adresse e-mail *">
                       <Input type="email" value={registerEmail} onChange={(e) => setRegisterEmail(e.target.value)} placeholder="vous@exemple.com" />
