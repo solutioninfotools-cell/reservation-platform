@@ -1,0 +1,416 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model SystemConfig {
+  id                         String           @id @default(uuid())
+  isConfigured               Boolean          @default(false)
+  modeSupervision            ModeSupervision?
+  domaine                    String?
+  platformName               String           @default("RendezVousApp")
+  slogan                     String?
+  description                String?
+  logoUrl                    String?
+  address                    String?
+  phone                      String?
+  email                      String?
+  joursOuvrables             String[]         @default([])
+  horairesGeneraux           String?
+  conditions                 String?
+  /// Texte des conditions présenté au moment de réserver.
+  conditionsReservation      String?
+  heroImageUrl               String?
+  localisationUrl            String?
+  /// Règles d'annulation et de report côté client (CDC IV).
+  delaiMinAnnulationHeures   Int              @default(0)
+  delaiMinModificationHeures Int              @default(48)
+  maxChangementsRdv          Int              @default(1)
+  createdAt                  DateTime         @default(now())
+  updatedAt                  DateTime         @updatedAt
+}
+
+model User {
+  id                    String                   @id @default(uuid())
+  email                 String                   @unique
+  passwordHash          String
+  role                  Role
+  statutCompte          StatutCompte             @default(EN_ATTENTE)
+  emailVerifie          Boolean                  @default(false)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  lastLoginAt           DateTime?
+  auditLogs             AuditLog[]
+  emailTokens           EmailVerificationToken[]
+  notificationsRecues   Notification[]           @relation("NotificationsRecues")
+  notificationsEnvoyees Notification[]           @relation("NotificationsEnvoyees")
+  professionnel         Professionnel?
+  receptionniste        Receptionniste?
+
+  @@index([role])
+  @@index([statutCompte])
+}
+
+model Professionnel {
+  id                  String                 @id @default(uuid())
+  userId              String                 @unique
+  nom                 String
+  specialite          String?
+  description         String?
+  adresse             String?
+  telephone           String?
+  photoUrl            String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  affectations        Affectation[]
+  champsPersonnalises ChampPersonnalise[]
+  disponibilites      Disponibilite[]
+  indisponibilites    Indisponibilite[]
+  notesClients        NoteClient[]
+  parametres          ParametresReservation?
+  user                User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rendezVous          RendezVous[]
+  services            Service[]
+
+  @@index([nom])
+}
+
+model Receptionniste {
+  id           String        @id @default(uuid())
+  userId       String        @unique
+  nom          String
+  telephone    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  affectations Affectation[]
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Affectation {
+  id                  String         @id @default(uuid())
+  professionnelId     String
+  receptionnisteId    String
+  peutConsulterAgenda Boolean        @default(true)
+  peutGererRdv        Boolean        @default(true)
+  peutGererPlanning   Boolean        @default(false)
+  peutGererParametres Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  /// Activation de la réceptionniste SUR CET ESPACE uniquement (CDC II.13.1).
+  /// Le statut du compte lui-même reste du ressort de l'Admin (CDC I.11) : une
+  /// réceptionniste peut servir plusieurs professionnels, l'un ne doit pas
+  /// pouvoir la couper chez les autres.
+  actif               Boolean        @default(true)
+  professionnel       Professionnel  @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  receptionniste      Receptionniste @relation(fields: [receptionnisteId], references: [id], onDelete: Cascade)
+
+  @@unique([professionnelId, receptionnisteId])
+}
+
+model Client {
+  id            String       @id @default(uuid())
+  nom           String
+  prenom        String
+  telephone     String       @unique
+  email         String?
+  dateNaissance DateTime?
+  adresse       String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  notes         NoteClient[]
+  rendezVous    RendezVous[]
+
+  @@index([nom, prenom])
+}
+
+model Service {
+  id                  String              @id @default(uuid())
+  professionnelId     String
+  nom                 String
+  description         String?
+  dureeMinutes        Int
+  prix                Int?
+  actif               Boolean             @default(true)
+  /// Disponibilité affichée côté client, distincte de `actif` qui décide si
+  /// le service est publié du tout.
+  statut              StatutService       @default(DISPONIBLE)
+  imageUrl            String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  champsPersonnalises ChampPersonnalise[]
+  rendezVous          RendezVous[]
+  professionnel       Professionnel       @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  @@index([professionnelId])
+}
+
+model ChampPersonnalise {
+  id                String         @id @default(uuid())
+  professionnelId   String
+  serviceId         String?
+  label             String
+  type              TypeChamp
+  options           String[]       @default([])
+  obligatoire       Boolean        @default(false)
+  ordre             Int            @default(0)
+  createdAt         DateTime       @default(now())
+  conditionLogique  String         @default("ET")
+  /// Logique conditionnelle (CDC II.6). Tableau [{ champId, valeur }] ; vide ou
+  /// null = champ toujours visible côté client. `conditionLogique` combine les
+  /// conditions entre elles ("ET" ou "OU").
+  conditions        Json?
+  /// Cas « condition → obligatoire » : le champ n'est requis que lorsque ses
+  /// conditions sont satisfaites, et reste facultatif sinon.
+  requisSiCondition Boolean        @default(false)
+  texteAide         String?
+  valeurParDefaut   String?
+  professionnel     Professionnel  @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  service           Service?       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  reponses          ReponseChamp[]
+}
+
+model ReponseChamp {
+  id           String            @id @default(uuid())
+  champId      String
+  rendezVousId String
+  valeur       String
+  champ        ChampPersonnalise @relation(fields: [champId], references: [id], onDelete: Cascade)
+  rendezVous   RendezVous        @relation(fields: [rendezVousId], references: [id], onDelete: Cascade)
+}
+
+model Disponibilite {
+  id              String        @id @default(uuid())
+  professionnelId String
+  jourSemaine     Int
+  heureDebut      String
+  heureFin        String
+  createdAt       DateTime      @default(now())
+  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  @@index([professionnelId, jourSemaine])
+}
+
+model Indisponibilite {
+  id              String              @id @default(uuid())
+  professionnelId String
+  type            TypeIndisponibilite
+  dateDebut       DateTime
+  dateFin         DateTime
+  motif           String?
+  clientsNotifies Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  professionnel   Professionnel       @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  @@index([professionnelId, dateDebut, dateFin])
+}
+
+model RendezVous {
+  id                String             @id @default(uuid())
+  professionnelId   String
+  serviceId         String
+  clientId          String
+  dateDebut         DateTime
+  dateFin           DateTime
+  statut            StatutRdv          @default(RESERVE)
+  origine           OrigineRdv         @default(EN_LIGNE)
+  remarque          String?
+  motifAnnulation   String?
+  manageToken       String?            @unique
+  /// Suivi des reports demandés par le client (plafonné par
+  /// SystemConfig.maxChangementsRdv).
+  nombreChangements Int                @default(0)
+  changeUsed        Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  historique        HistoriqueStatut[]
+  client            Client             @relation(fields: [clientId], references: [id])
+  professionnel     Professionnel      @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  service           Service            @relation(fields: [serviceId], references: [id])
+  reponsesChamps    ReponseChamp[]
+
+  @@unique([professionnelId, dateDebut])
+  @@index([professionnelId, dateDebut, dateFin])
+  @@index([clientId])
+  @@index([statut])
+}
+
+model HistoriqueStatut {
+  id            String     @id @default(uuid())
+  rendezVousId  String
+  ancienStatut  StatutRdv?
+  nouveauStatut StatutRdv
+  changedBy     String?
+  createdAt     DateTime   @default(now())
+  rendezVous    RendezVous @relation(fields: [rendezVousId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  /// Destinataire. La contrainte porte encore son ancien nom en base
+  /// (`Notification_userId_fkey`) : `map` le conserve pour ne pas créer
+  /// d'écart entre le schéma et la base.
+  recipientId String
+  /// Auteur de l'action notifiée, quand il y en a un. Facultatif : une
+  /// notification peut venir du système (rappel, annulation automatique).
+  senderId    String?
+  type        TypeNotification
+  message     String
+  lu          Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  recipient   User             @relation("NotificationsRecues", fields: [recipientId], references: [id], onDelete: Cascade, map: "Notification_userId_fkey")
+  sender      User?            @relation("NotificationsEnvoyees", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, lu])
+  @@index([senderId])
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  userId          String?
+  action          String
+  cible           String?
+  details         Json?
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+  /// Professionnel concerné par l'action, quand elle porte sur son activité.
+  /// Permet l'« Historique des actions » de l'espace Professionnel (CDC II.17)
+  /// et le suivi des actions de ses réceptionnistes (CDC II.13.3), sans ouvrir
+  /// le journal global réservé à l'Admin.
+  professionnelId String?
+  user            User?    @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([createdAt])
+  @@index([professionnelId, createdAt])
+}
+
+/// Notes internes d'un professionnel sur un client (CDC II.12).
+/// `Client` est global (dédoublonné par téléphone) : la note est donc scopée par
+/// professionnel, pour qu'une note de Pro A ne soit jamais lisible par Pro B.
+model NoteClient {
+  id              String        @id @default(uuid())
+  professionnelId String
+  clientId        String
+  texte           String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  client          Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  @@index([professionnelId, clientId])
+}
+
+/// Règles de réservation propres à chaque professionnel (CDC II.15bis).
+/// Appliquées par le moteur de créneaux et à la création d'un rendez-vous.
+model ParametresReservation {
+  id                     String        @id @default(uuid())
+  professionnelId        String        @unique
+  /// Temps minimum entre deux rendez-vous, en minutes.
+  intervalleMinutes      Int           @default(10)
+  /// Délai minimum avant de pouvoir réserver, en heures.
+  delaiMinHeures         Int           @default(2)
+  /// Horizon maximum de réservation, en jours.
+  delaiMaxJours          Int           @default(90)
+  /// Seuil d'avertissement pour les absences répétées.
+  seuilAbsences          Int           @default(2)
+  /// Nombre maximum de rendez-vous par client et par journée.
+  maxRdvParClientParJour Int           @default(1)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  professionnel          Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  code      String
+  type      TypeToken @default(VERIFICATION_EMAIL)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+}
+
+enum ModeSupervision {
+  ADMIN
+  PRESTATAIRE
+}
+
+enum Role {
+  ADMIN
+  PROFESSIONNEL
+  RECEPTIONNISTE
+}
+
+enum StatutCompte {
+  EN_ATTENTE
+  ACTIF
+  REFUSE
+  DESACTIVE
+}
+
+/// Les 9 types de champs du cahier des charges (section II.6).
+enum TypeChamp {
+  TEXTE
+  NOMBRE
+  SELECTION
+  RADIO
+  CHECKBOX
+  DATE
+  TEXTE_LONG
+  SWITCH
+  FICHIER
+}
+
+enum TypeIndisponibilite {
+  CRENEAU
+  JOURNEE
+  PERIODE
+}
+
+enum StatutRdv {
+  RESERVE
+  CLIENT_ARRIVE
+  EN_COURS
+  TERMINE
+  ABSENT
+  ANNULE
+}
+
+enum OrigineRdv {
+  EN_LIGNE
+  RECEPTIONNISTE
+  PROFESSIONNEL
+}
+
+enum StatutService {
+  DISPONIBLE
+  COMPLET
+  INDISPONIBLE
+}
+
+enum TypeNotification {
+  NOUVELLE_RESERVATION
+  ANNULATION
+  MODIFICATION
+  CHANGEMENT_STATUT
+  PROFESSIONNEL_ABSENT
+  RAPPEL
+  CONFLIT_PLANNING
+  COMPTE_VALIDE
+  COMPTE_REFUSE
+  AFFECTATION
+  AUTORISATIONS_MODIFIEES
+}
+
+enum TypeToken {
+  VERIFICATION_EMAIL
+  RESET_PASSWORD
+}
