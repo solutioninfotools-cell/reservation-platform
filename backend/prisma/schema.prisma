@@ -23,14 +23,16 @@ model SystemConfig {
   joursOuvrables             String[]         @default([])
   horairesGeneraux           String?
   conditions                 String?
-  createdAt                  DateTime         @default(now())
-  updatedAt                  DateTime         @updatedAt
+  /// Texte des conditions présenté au moment de réserver.
   conditionsReservation      String?
+  heroImageUrl               String?
+  localisationUrl            String?
+  /// Règles d'annulation et de report côté client (CDC IV).
   delaiMinAnnulationHeures   Int              @default(0)
   delaiMinModificationHeures Int              @default(48)
-  heroImageUrl               String?
   maxChangementsRdv          Int              @default(1)
-  localisationUrl            String?
+  createdAt                  DateTime         @default(now())
+  updatedAt                  DateTime         @updatedAt
 }
 
 model User {
@@ -45,37 +47,59 @@ model User {
   lastLoginAt           DateTime?
   auditLogs             AuditLog[]
   emailTokens           EmailVerificationToken[]
-  notificationsReceived Notification[]           @relation("NotificationRecipient")
-  notificationsSent     Notification[]           @relation("NotificationSender")
-  professionnel  Professionnel?
-  receptionniste Receptionniste?
+  notificationsRecues   Notification[]           @relation("NotificationsRecues")
+  notificationsEnvoyees Notification[]           @relation("NotificationsEnvoyees")
+  professionnel         Professionnel?
+  receptionniste        Receptionniste?
 
   @@index([role])
   @@index([statutCompte])
 }
 
 model Professionnel {
-  id                    String                 @id @default(uuid())
-  userId                String                 @unique
-  nom                   String
-  specialite            String?
-  description           String?
-  adresse               String?
-  telephone             String?
-  photoUrl              String?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  affectations          Affectation[]
-  champsPersonnalises   ChampPersonnalise[]
-  disponibilites        Disponibilite[]
-  indisponibilites      Indisponibilite[]
-  NoteClient            NoteClient[]
-  ParametresReservation ParametresReservation?
-  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rendezVous            RendezVous[]
-  services              Service[]
+  id                  String                 @id @default(uuid())
+  userId              String                 @unique
+  nom                 String
+  specialite          String?
+  description         String?
+  adresse             String?
+  telephone           String?
+  photoUrl            String?
+  /// Domaine d'activité auquel l'Admin rattache le professionnel (CDC I.14).
+  /// Facultatif : un professionnel peut rester non classé.
+  domaineId           String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  affectations        Affectation[]
+  champsPersonnalises ChampPersonnalise[]
+  disponibilites      Disponibilite[]
+  indisponibilites    Indisponibilite[]
+  notesClients        NoteClient[]
+  parametres          ParametresReservation?
+  user                User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  domaine             Domaine?               @relation(fields: [domaineId], references: [id], onDelete: SetNull)
+  rendezVous          RendezVous[]
+  services            Service[]
 
   @@index([nom])
+  @@index([domaineId])
+}
+
+/// Domaines d'activité de la plateforme (Santé, Beauté, Conseil…), gérés par
+/// l'Admin (CDC I.14). Ils classent les professionnels et alimentent les filtres
+/// de la page publique. Un domaine encore utilisé ne peut pas être supprimé : il
+/// est masqué (`actif = false`) pour ne plus être proposé.
+model Domaine {
+  id             String          @id @default(uuid())
+  nom            String          @unique
+  description    String?
+  actif          Boolean         @default(true)
+  ordre          Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  professionnels Professionnel[]
+
+  @@index([actif, ordre])
 }
 
 model Receptionniste {
@@ -99,6 +123,10 @@ model Affectation {
   peutGererParametres Boolean        @default(false)
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
+  /// Activation de la réceptionniste SUR CET ESPACE uniquement (CDC II.13.1).
+  /// Le statut du compte lui-même reste du ressort de l'Admin (CDC I.11) : une
+  /// réceptionniste peut servir plusieurs professionnels, l'un ne doit pas
+  /// pouvoir la couper chez les autres.
   actif               Boolean        @default(true)
   professionnel       Professionnel  @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
   receptionniste      Receptionniste @relation(fields: [receptionnisteId], references: [id], onDelete: Cascade)
@@ -116,16 +144,10 @@ model Client {
   adresse       String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
-  NoteClient    NoteClient[]
+  notes         NoteClient[]
   rendezVous    RendezVous[]
 
   @@index([nom, prenom])
-}
-
-enum StatutService {
-  DISPONIBLE
-  COMPLET
-  INDISPONIBLE
 }
 
 model Service {
@@ -136,8 +158,10 @@ model Service {
   dureeMinutes        Int
   prix                Int?
   actif               Boolean             @default(true)
-  imageUrl            String?
+  /// Disponibilité affichée côté client, distincte de `actif` qui décide si
+  /// le service est publié du tout.
   statut              StatutService       @default(DISPONIBLE)
+  imageUrl            String?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   champsPersonnalises ChampPersonnalise[]
@@ -158,7 +182,12 @@ model ChampPersonnalise {
   ordre             Int            @default(0)
   createdAt         DateTime       @default(now())
   conditionLogique  String         @default("ET")
+  /// Logique conditionnelle (CDC II.6). Tableau [{ champId, valeur }] ; vide ou
+  /// null = champ toujours visible côté client. `conditionLogique` combine les
+  /// conditions entre elles ("ET" ou "OU").
   conditions        Json?
+  /// Cas « condition → obligatoire » : le champ n'est requis que lorsque ses
+  /// conditions sont satisfaites, et reste facultatif sinon.
   requisSiCondition Boolean        @default(false)
   texteAide         String?
   valeurParDefaut   String?
@@ -214,10 +243,12 @@ model RendezVous {
   remarque          String?
   motifAnnulation   String?
   manageToken       String?            @unique
+  /// Suivi des reports demandés par le client (plafonné par
+  /// SystemConfig.maxChangementsRdv).
+  nombreChangements Int                @default(0)
+  changeUsed        Boolean            @default(false)
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
-  changeUsed        Boolean            @default(false)
-  nombreChangements Int                @default(0)
   historique        HistoriqueStatut[]
   client            Client             @relation(fields: [clientId], references: [id])
   professionnel     Professionnel      @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
@@ -242,15 +273,19 @@ model HistoriqueStatut {
 
 model Notification {
   id          String           @id @default(uuid())
+  /// Destinataire. La contrainte porte encore son ancien nom en base
+  /// (`Notification_userId_fkey`) : `map` le conserve pour ne pas créer
+  /// d'écart entre le schéma et la base.
   recipientId String
+  /// Auteur de l'action notifiée, quand il y en a un. Facultatif : une
+  /// notification peut venir du système (rappel, annulation automatique).
   senderId    String?
   type        TypeNotification
   message     String
   lu          Boolean          @default(false)
   createdAt   DateTime         @default(now())
-
-  recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
-  sender    User? @relation("NotificationSender", fields: [senderId], references: [id], onDelete: SetNull)
+  recipient   User             @relation("NotificationsRecues", fields: [recipientId], references: [id], onDelete: Cascade, map: "Notification_userId_fkey")
+  sender      User?            @relation("NotificationsEnvoyees", fields: [senderId], references: [id], onDelete: SetNull)
 
   @@index([recipientId, lu])
   @@index([senderId])
@@ -264,12 +299,52 @@ model AuditLog {
   details         Json?
   ipAddress       String?
   createdAt       DateTime @default(now())
+  /// Professionnel concerné par l'action, quand elle porte sur son activité.
+  /// Permet l'« Historique des actions » de l'espace Professionnel (CDC II.17)
+  /// et le suivi des actions de ses réceptionnistes (CDC II.13.3), sans ouvrir
+  /// le journal global réservé à l'Admin.
   professionnelId String?
   user            User?    @relation(fields: [userId], references: [id])
 
   @@index([action])
   @@index([createdAt])
   @@index([professionnelId, createdAt])
+}
+
+/// Notes internes d'un professionnel sur un client (CDC II.12).
+/// `Client` est global (dédoublonné par téléphone) : la note est donc scopée par
+/// professionnel, pour qu'une note de Pro A ne soit jamais lisible par Pro B.
+model NoteClient {
+  id              String        @id @default(uuid())
+  professionnelId String
+  clientId        String
+  texte           String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  client          Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+
+  @@index([professionnelId, clientId])
+}
+
+/// Règles de réservation propres à chaque professionnel (CDC II.15bis).
+/// Appliquées par le moteur de créneaux et à la création d'un rendez-vous.
+model ParametresReservation {
+  id                     String        @id @default(uuid())
+  professionnelId        String        @unique
+  /// Temps minimum entre deux rendez-vous, en minutes.
+  intervalleMinutes      Int           @default(10)
+  /// Délai minimum avant de pouvoir réserver, en heures.
+  delaiMinHeures         Int           @default(2)
+  /// Horizon maximum de réservation, en jours.
+  delaiMaxJours          Int           @default(90)
+  /// Seuil d'avertissement pour les absences répétées.
+  seuilAbsences          Int           @default(2)
+  /// Nombre maximum de rendez-vous par client et par journée.
+  maxRdvParClientParJour Int           @default(1)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  professionnel          Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
 }
 
 model EmailVerificationToken {
@@ -283,32 +358,6 @@ model EmailVerificationToken {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type])
-}
-
-model NoteClient {
-  id              String        @id
-  professionnelId String
-  clientId        String
-  texte           String
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime
-  Client          Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  Professionnel   Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
-
-  @@index([professionnelId, clientId])
-}
-
-model ParametresReservation {
-  id                     String        @id
-  professionnelId        String        @unique
-  intervalleMinutes      Int           @default(10)
-  delaiMinHeures         Int           @default(2)
-  delaiMaxJours          Int           @default(90)
-  seuilAbsences          Int           @default(2)
-  maxRdvParClientParJour Int           @default(1)
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime
-  Professionnel          Professionnel @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
 }
 
 enum ModeSupervision {
@@ -329,6 +378,7 @@ enum StatutCompte {
   DESACTIVE
 }
 
+/// Les 9 types de champs du cahier des charges (section II.6).
 enum TypeChamp {
   TEXTE
   NOMBRE
@@ -362,6 +412,12 @@ enum OrigineRdv {
   PROFESSIONNEL
 }
 
+enum StatutService {
+  DISPONIBLE
+  COMPLET
+  INDISPONIBLE
+}
+
 enum TypeNotification {
   NOUVELLE_RESERVATION
   ANNULATION
@@ -372,8 +428,13 @@ enum TypeNotification {
   CONFLIT_PLANNING
   COMPTE_VALIDE
   COMPTE_REFUSE
+  COMPTE_CREE
+  MOT_DE_PASSE_REINITIALISE
+  SERVICE_STATUT_MODIFIE
   AFFECTATION
   AUTORISATIONS_MODIFIEES
+  /// Message diffusé par l'Admin à un ou plusieurs comptes (CDC I.13).
+  ANNONCE
 }
 
 enum TypeToken {

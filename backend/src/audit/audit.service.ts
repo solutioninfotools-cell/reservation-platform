@@ -5,7 +5,19 @@ import { PrismaService } from '../prisma/prisma.service';
 export class AuditService {
   constructor(private prisma: PrismaService) {}
 
-  async log(params: { userId?: string | null; action: string; cible?: string; details?: any; ipAddress?: string }) {
+  /**
+   * `professionnelId` rattache l'entrée à l'activité d'un professionnel : elle
+   * alimente l'« Historique des actions » de son espace (CDC II.17) sans ouvrir
+   * le journal global, réservé à l'Admin.
+   */
+  async log(params: {
+    userId?: string | null;
+    action: string;
+    cible?: string;
+    details?: any;
+    ipAddress?: string;
+    professionnelId?: string | null;
+  }) {
     return this.prisma.auditLog.create({
       data: {
         userId: params.userId ?? undefined,
@@ -13,13 +25,17 @@ export class AuditService {
         cible: params.cible,
         details: params.details,
         ipAddress: params.ipAddress,
+        professionnelId: params.professionnelId ?? undefined,
       },
     });
   }
 
-  async list(params: { action?: string; take?: number; skip?: number }) {
+  async list(params: { action?: string; professionnelId?: string; take?: number; skip?: number }) {
     return this.prisma.auditLog.findMany({
-      where: params.action ? { action: params.action } : undefined,
+      where: {
+        action: params.action || undefined,
+        professionnelId: params.professionnelId || undefined,
+      },
       orderBy: { createdAt: 'desc' },
       take: params.take ?? 50,
       skip: params.skip ?? 0,

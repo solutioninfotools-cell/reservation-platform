@@ -23,6 +23,11 @@ export class ReceptionnisteController {
     private readonly receptionnisteService: ReceptionnisteService
   ) {}
 
+  @Get('moi')
+  moi(@CurrentUser() user: any) {
+    return this.rec.profilComplet(user.userId);
+  }
+
   @Get('affectations')
   affectations(@CurrentUser() user: any) {
     return this.receptionnisteService.mesAffectations(user.userId);

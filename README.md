@@ -41,18 +41,38 @@ npm run dev                     # http://localhost:5173
 
 ---
 
-## Accès — comptes de démonstration
+## Première utilisation
 
-Mot de passe pour tous les comptes : **`Password123!`**
+La base ne contient aucune donnée de démonstration : tout est créé depuis
+l'application.
 
-| Rôle | E-mail |
-|---|---|
-| Admin | admin@rendezvousapp.com |
-| Professionnel | ahmed.benali@rendezvousapp.com |
-| Réceptionniste | imane.b@rendezvousapp.com |
+1. Créez le premier compte superviseur, au choix :
+   - **Depuis l'application** — ouvrez `http://localhost:5173/configuration` et
+     suivez l'assistant (mode de supervision, domaine d'activité, compte).
+   - **En ligne de commande** — `npm run prisma:seed` dans `backend/`. Le script
+     n'amorce que la configuration de l'espace et ce compte ; il n'invente aucun
+     client, rendez-vous ni service :
+
+     ```bash
+     cd backend
+     SEED_ADMIN_EMAIL=admin@monsite.com \
+     SEED_ADMIN_PASSWORD='VotreMotDePasse123!' \
+     SEED_DOMAINE=Médical \
+     npm run prisma:seed
+     ```
+
+     Sans `SEED_ADMIN_PASSWORD`, un mot de passe aléatoire est généré et affiché
+     en fin d'exécution. Autres variables : `SEED_ADMIN_NOM`, `SEED_MODE`
+     (`ADMIN` ou `PRESTATAIRE`), `SEED_PLATFORM_NAME`. Le script ne touche jamais
+     à un compte déjà existant.
+2. Connectez-vous avec ce compte sur `http://localhost:5173/connexion`.
+3. Créez vos professionnels et réceptionnistes depuis l'espace Admin, puis vos
+   services et disponibilités depuis l'espace Professionnel — la page publique
+   n'affiche des créneaux qu'une fois ces disponibilités définies.
 
 Le Client n'a pas de compte : il réserve directement depuis la page publique
-(`http://localhost:5173`).
+(`http://localhost:5173`) et gère son rendez-vous via le lien unique remis à la
+confirmation (`/rdv/<token>`).
 
 ---
 
@@ -63,7 +83,7 @@ reservation-platform/
 ├── backend/            # API NestJS (auth, appointments, admin, professionnel, receptionniste, public...)
 │   └── prisma/          # schema.prisma + migrations
 ├── frontend/           # App React (un dashboard par rôle)
-├── docs/
+├── docs/              # ARCHITECTURE.md + ADMIN.md (fonctionnalités et API de l'espace Admin)
 ├── .env.example
 └── docker-compose.yml
 ```

@@ -1,11 +1,13 @@
-// @ts-nocheck -- fichier porté depuis un script JS existant (voir note en fin de réponse)
+// @ts-nocheck -- vue portée depuis un script JS existant, branchée sur l'API réelle (/api/admin)
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth.store';
+import { adminApi } from '../api/admin.api';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
+  const account = useAuthStore((s) => s.user);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -14,91 +16,168 @@ export default function AdminDashboard() {
       navigate('/connexion');
     }, { signal: ac.signal });
 
-    // ---- begin ported script (identique à la version HTML d'origine) ----
-  /* =========================================================
-     DONNÉES (mock) — Espace Administrateur, conforme au cahier des charges
-     ========================================================= */
-  window.todayISO = function todayISO() { return new Date().toISOString().slice(0,10); }
-  window.isoPlusDays = function isoPlusDays(iso,n) { const d = new Date(iso+"T00:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
-  const TODAY = todayISO();
-  let uidCounter = 100;
-  window.uid = function uid(p) { return (p||"id")+(uidCounter++); }
-  window.fmtDateShort = function fmtDateShort(iso) { const d = new Date(iso+"T00:00:00"); return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"}); }
-  window.initials = function initials(name) { return name.split(" ").map((w)=>w[0]).slice(0,2).join("").toUpperCase(); }
-  window.showToast = function showToast(msg) { const t=document.getElementById("toast"); t.innerHTML=msg; t.classList.add("show"); clearTimeout(showToast._t); showToast._t=setTimeout(()=>t.classList.remove("show"),2600); }
-
-  const DOMAINES = ["Médical","Juridique","Coiffure/Beauté","Prestataire de service général","Centre de formation","Salle de sport/Coach"];
+  const STATUT_UI = { EN_ATTENTE: "attente", ACTIF: "actif", REFUSE: "refuse", DESACTIVE: "desactive" };
+  const STATUT_API = { attente: "EN_ATTENTE", actif: "ACTIF", refuse: "REFUSE", desactive: "DESACTIVE" };
   const STATUS_COMPTE = {
     attente: { label: "En attente", cls: "st-encours" },
     actif: { label: "Actif", cls: "st-termine" },
     refuse: { label: "Refusé", cls: "st-annule" },
     desactive: { label: "Désactivé", cls: "st-absent" },
   };
+  const ETAT_LABELS = {
+    RESERVE: { label: "Réservé", cls: "st-reserve" },
+    CLIENT_ARRIVE: { label: "Client arrivé", cls: "st-arrive" },
+    EN_COURS: { label: "En cours", cls: "st-encours" },
+    TERMINE: { label: "Terminé", cls: "st-termine" },
+    ABSENT: { label: "Absent", cls: "st-absent" },
+    ANNULE: { label: "Annulé", cls: "st-annule" },
+  };
+  const STATUT_SERVICE = {
+    DISPONIBLE: { label: "Disponible", cls: "st-termine" },
+    COMPLET: { label: "Complet", cls: "st-encours" },
+    INDISPONIBLE: { label: "Indisponible", cls: "st-absent" },
+  };
+  const ROLE_LABELS = { PROFESSIONNEL: "Professionnel", RECEPTIONNISTE: "Réceptionniste", ADMIN: "Administrateur", CLIENT: "Client" };
+  const TYPE_INDISPO = { CRENEAU: "Créneau", JOURNEE: "Journée", PERIODE: "Période" };
+  const CIBLES_ANNONCE = { TOUS: "Tous les comptes actifs", PROFESSIONNELS: "Professionnels", RECEPTIONNISTES: "Réceptionnistes" };
+  const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+  const NOTIFS_ALERTE = ["COMPTE_REFUSE", "ANNULATION", "CONFLIT_PLANNING", "PROFESSIONNEL_ABSENT"];
 
-  let PROS = [
-    { id: "p1", name: "Dr. Ahmed Benali", email: "ahmed.benali@rendezvousapp.com", phone: "0555 10 20 30", domaine: "Médical", role: "Médecin généraliste", color: "#8957FF", statut: "actif", createdAt: "2026-02-14", lastLogin: "Il y a 2 h", nbServices: 4, nbRdv: 210, nbClients: 86, nbReceptionnistes: 2 },
-    { id: "p2", name: "Dr. Sara Khalfi", email: "sara.khalfi@rendezvousapp.com", phone: "0555 22 33 11", domaine: "Médical", role: "Dermatologue", color: "#2FA79D", statut: "actif", createdAt: "2026-03-02", lastLogin: "Il y a 5 h", nbServices: 3, nbRdv: 158, nbClients: 64, nbReceptionnistes: 1 },
-    { id: "p3", name: "Dr. Karim Abid", email: "karim.abid@rendezvousapp.com", phone: "0555 44 55 66", domaine: "Médical", role: "Cardiologue", color: "#E2478A", statut: "actif", createdAt: "2026-01-20", lastLogin: "Hier", nbServices: 5, nbRdv: 302, nbClients: 121, nbReceptionnistes: 2 },
-    { id: "p4", name: "Imane Z.", email: "imane.z@rendezvousapp.com", phone: "0555 77 88 99", domaine: "Prestataire de service général", role: "Psychologue", color: "#E2954A", statut: "actif", createdAt: "2026-04-11", lastLogin: "Il y a 1 j", nbServices: 2, nbRdv: 95, nbClients: 40, nbReceptionnistes: 1 },
-    { id: "p5", name: "Maître Yacine Ferhat", email: "yacine.ferhat@rendezvousapp.com", phone: "0555 12 90 00", domaine: "Juridique", role: "Avocat", color: "#3FA65C", statut: "attente", createdAt: TODAY, lastLogin: "—", nbServices: 0, nbRdv: 0, nbClients: 0, nbReceptionnistes: 0 },
-    { id: "p6", name: "Salon Beauté Lys", email: "contact@beautelys.com", phone: "0555 33 44 22", domaine: "Coiffure/Beauté", role: "Salon de coiffure", color: "#8A8496", statut: "desactive", createdAt: "2025-11-05", lastLogin: "Il y a 3 sem.", nbServices: 6, nbRdv: 412, nbClients: 180, nbReceptionnistes: 1 },
-  ];
+  let STATS = null;
+  let PROS = [];
+  let PROS_VIEW = [];
+  let RECEPTIONNISTES = [];
+  let RECS_VIEW = [];
+  let CLIENTS_VIEW = [];
+  let SERVICES_VIEW = [];
+  let RESERVATIONS = [];
+  let RDV_TOTAL = 0;
+  let USERS_VIEW = [];
+  let AGENDAS = [];
+  let PLATFORM = { platformName: "", slogan: "", description: "", logoUrl: "", address: "", phone: "", email: "", joursOuvrables: [], horairesGeneraux: "", conditions: "", conditionsReservation: "", heroImageUrl: "", localisationUrl: "", delaiMinAnnulationHeures: 0, delaiMinModificationHeures: 48, maxChangementsRdv: 1, domaine: "" };
+  let NOTIFS = [];
+  let AUDIT = { items: [], total: 0, actions: [] };
+  let DOMAINES = [];
+  let INDISPOS = [];
+  let SELECTION = { pros: new Set(), recs: new Set() };
 
-  let RECEPTIONNISTES = [
-    { id: "r1", name: "Imane B.", email: "imane.b@rendezvousapp.com", phone: "0555 90 10 20", statut: "actif", createdAt: "2026-02-20", pros: ["p1","p3"] },
-    { id: "r2", name: "Feriel N.", email: "feriel.n@rendezvousapp.com", phone: "0555 40 50 60", statut: "actif", createdAt: "2026-03-15", pros: ["p2"] },
-    { id: "r3", name: "Nesrine H.", email: "nesrine.h@rendezvousapp.com", phone: "0555 60 70 80", statut: "attente", createdAt: TODAY, pros: [] },
-  ];
-
-  let CLIENTS = [
-    { name: "Yasmine Hadj", email: "yasmine.hadj@mail.com", phone: "0555 12 34 66", pro: "Dr. Ahmed Benali", nbRdv: 4, createdAt: "2025-12-01", statut: "actif" },
-    { name: "Karim Yacine", email: "karim.y@mail.com", phone: "0555 22 33 44", pro: "Dr. Ahmed Benali", nbRdv: 3, createdAt: "2026-01-15", statut: "actif" },
-    { name: "Nadia Belkacem", email: "nadia.b@mail.com", phone: "0552 98 76 54", pro: "Dr. Sara Khalfi", nbRdv: 6, createdAt: "2025-10-22", statut: "actif" },
-    { name: "Rachid Aït Ali", email: "rachid.aitali@mail.com", phone: "0555 67 89 01", pro: "Dr. Karim Abid", nbRdv: 9, createdAt: "2025-08-05", statut: "actif" },
-    { name: "Lina Bouzid", email: "lina.bouzid@mail.com", phone: "0555 32 11 22", pro: "Imane Z.", nbRdv: 12, createdAt: "2025-09-18", statut: "actif" },
-  ];
-
-  let SERVICES = [
-    { id: "s1", name: "Consultation générale", pro: "Dr. Ahmed Benali", statut: "actif", nbRdv: 210 },
-    { id: "s2", name: "Consultation dermatologie", pro: "Dr. Sara Khalfi", statut: "actif", nbRdv: 158 },
-    { id: "s3", name: "Échographie cardiaque", pro: "Dr. Karim Abid", statut: "actif", nbRdv: 88 },
-    { id: "s4", name: "Séance de thérapie", pro: "Imane Z.", statut: "actif", nbRdv: 95 },
-    { id: "s5", name: "Coloration", pro: "Salon Beauté Lys", statut: "désactivé", nbRdv: 140 },
-  ];
-
-  let RESERVATIONS = [
-    { id: uid("res"), client: "Yasmine Hadj", pro: "Dr. Ahmed Benali", service: "Consultation générale", date: TODAY, heure: "09:00", etat: "reserve", createdAt: "2026-08-24", modifiedAt: "2026-08-24" },
-    { id: uid("res"), client: "Nadia Belkacem", pro: "Dr. Sara Khalfi", service: "Consultation dermatologie", date: isoPlusDays(TODAY,-1), heure: "16:00", etat: "annule", motif: "Empêchement personnel", createdAt: isoPlusDays(TODAY,-6), modifiedAt: isoPlusDays(TODAY,-1) },
-    { id: uid("res"), client: "Rachid Aït Ali", pro: "Dr. Karim Abid", service: "Consultation cardiaque", date: TODAY, heure: "09:00", etat: "reserve", createdAt: "2026-08-18", modifiedAt: "2026-08-18" },
-    { id: uid("res"), client: "Lina Bouzid", pro: "Imane Z.", service: "Séance de thérapie", date: isoPlusDays(TODAY,-2), heure: "10:00", etat: "termine", createdAt: isoPlusDays(TODAY,-10), modifiedAt: isoPlusDays(TODAY,-2) },
-    { id: uid("res"), client: "Karim Yacine", pro: "Dr. Ahmed Benali", service: "Consultation générale", date: isoPlusDays(TODAY,-14), heure: "09:00", etat: "termine", createdAt: isoPlusDays(TODAY,-20), modifiedAt: isoPlusDays(TODAY,-14) },
-  ];
-
-  let PLATFORM = {
-    name: "RendezVousApp", logo: "", desc: "", address: "", phone: "", email: "",
-    joursOuvrables: ["Lundi","Mardi","Mercredi","Jeudi","Vendredi"], horaires: "09:00 – 18:00",
-    conditions: "", slogan: "",
+  let state = {
+    page: "dashboard",
+    proFilter: { statut: "", search: "", domaineId: "" },
+    recFilter: { statut: "", search: "" },
+    usersFilter: { role: "", search: "" },
+    clientsFilter: { search: "" },
+    rdvFilter: { statut: "", professionnelId: "", from: "", to: "", search: "", take: 100, skip: 0 },
+    servicesFilter: { search: "", actif: "", statut: "" },
+    auditFilter: { action: "", from: "", to: "", take: 50, skip: 0 },
+    indispoFilter: { professionnelId: "", type: "", from: "", to: "" },
   };
 
-  let NOTIFS = [
-    { id: 1, type: "new", text: "Nouvelle inscription en attente — <b>Maître Yacine Ferhat</b> (Juridique)", time: "Il y a 30 min", unread: true },
-    { id: 2, type: "new", text: "Nouvelle inscription en attente — <b>Nesrine H.</b> (Réceptionniste)", time: "Il y a 1 h", unread: true },
-    { id: 3, type: "warn", text: "Le compte <b>Salon Beauté Lys</b> a été désactivé", time: "Il y a 3 sem.", unread: false },
-  ];
-  const NOTIF_ICONS = {
-    new: { bg: "#F1ECFF", color: "#8957FF", svg: '<path d="M12 5v14M5 12h14"/>' },
-    warn: { bg: "#FDF1E2", color: "#E2954A", svg: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>' },
-  };
+  window.todayISO = function todayISO() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+  window.isoPlusDays = function isoPlusDays(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+  window.toDay = function toDay(value) { if (!value) return ""; const d = new Date(value); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+  window.toHeure = function toHeure(value) { if (!value) return ""; return new Date(value).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); }
+  window.fmtDateShort = function fmtDateShort(value) {
+    if (!value) return "—";
+    const d = String(value).length === 10 ? new Date(value + "T00:00:00") : new Date(value);
+    return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+  window.fmtDateTime = function fmtDateTime(value) { if (!value) return "—"; return `${fmtDateShort(value)} à ${toHeure(value)}`; }
+  window.fmtRelative = function fmtRelative(value) {
+    if (!value) return "—";
+    const min = Math.floor((Date.now() - new Date(value).getTime()) / 60000);
+    if (min < 1) return "À l'instant";
+    if (min < 60) return `Il y a ${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `Il y a ${h} h`;
+    const j = Math.floor(h / 24);
+    if (j === 1) return "Hier";
+    if (j < 31) return `Il y a ${j} j`;
+    return fmtDateShort(value);
+  }
+  window.fmtMois = function fmtMois(value) { return new Date(value).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }); }
+  window.fmtPrix = function fmtPrix(centimes) { return centimes === null || centimes === undefined ? "—" : (centimes / 100).toFixed(2); }
+  window.esc = function esc(value) {
+    if (value === null || value === undefined) return "";
+    return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  window.escArg = function escArg(value) {
+    const str = value === null || value === undefined ? "" : String(value);
+    return esc(str.replace(/\\/g, "\\\\").replace(/'/g, "\\'"));
+  }
+  window.initials = function initials(name) { return (name || "?").trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
+  const PALETTE = ["#8957FF", "#2FA79D", "#E2478A", "#E2954A", "#3FA65C", "#4A6CF7", "#8A8496"];
+  window.colorFor = function colorFor(id) { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return PALETTE[h % PALETTE.length]; }
+  window.val = function val(id) { return (document.getElementById(id)?.value || "").trim(); }
+  window.showToast = function showToast(msg) { const t = document.getElementById("toast"); if (!t) return; t.innerHTML = msg; t.classList.add("show"); clearTimeout(showToast._t); showToast._t = setTimeout(() => t.classList.remove("show"), 2800); }
+  window.showError = function showError(err) {
+    const msg = (err?.response?.data?.error ?? err?.response?.data?.message) || err?.message || "Une erreur est survenue.";
+    showToast(esc(Array.isArray(msg) ? msg.join(", ") : msg));
+  }
+  const debounce = (fn, ms = 320) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+  const suggestPassword = () => `Rdv-${Math.random().toString(36).slice(2, 8)}${Math.floor(Math.random() * 90 + 10)}!`;
 
-  let state = { page: "dashboard", proFilter: {statut:"",domaine:"",search:""}, recFilter:{search:""}, rdvFilter:{etat:"",pro:""}, servicesFilter:{search:""} };
+  const mapPro = (p) => ({
+    id: p.id, userId: p.userId, name: p.nom, email: p.email, phone: p.telephone || "—",
+    role: p.specialite || "—",
+    domaineId: p.domaineId || "", domaine: p.domaine || "",
+    color: colorFor(p.id), statut: STATUT_UI[p.statutCompte] || "attente",
+    createdAt: p.createdAt, lastLogin: fmtRelative(p.lastLoginAt),
+    nbServices: p.nbServices, nbRdv: p.nbRdv, nbClients: p.nbClients, nbReceptionnistes: p.nbReceptionnistes,
+  });
+  const mapRec = (r) => ({
+    id: r.id, userId: r.userId, name: r.nom, email: r.email, phone: r.telephone || "—",
+    statut: STATUT_UI[r.statutCompte] || "attente", createdAt: r.createdAt, lastLogin: fmtRelative(r.lastLoginAt),
+    pros: r.professionnelIds, affectations: r.professionnels,
+  });
+  const mapRdv = (r) => ({
+    id: r.id, clientId: r.clientId, client: `${r.client.prenom} ${r.client.nom}`.trim(), telephone: r.client.telephone,
+    professionnelId: r.professionnelId, pro: r.professionnel?.nom || "—", service: r.service?.nom || "—",
+    date: toDay(r.dateDebut), heure: toHeure(r.dateDebut), fin: toHeure(r.dateFin), etat: r.statut, origine: r.origine,
+    motif: r.motifAnnulation, remarque: r.remarque, createdAt: r.createdAt, modifiedAt: r.updatedAt,
+  });
+  const mapNotif = (n) => ({
+    id: n.id, type: NOTIFS_ALERTE.includes(n.type) ? "warn" : "new",
+    text: esc(n.message), time: fmtRelative(n.createdAt), unread: !n.lu, kind: n.type,
+  });
 
-  /* =========================================================
-     NAVIGATION
-     ========================================================= */
+  window.loadAll = async function loadAll() {
+    try {
+      const [stats, pros, recs, clients, services, rdv, params, notifs, agendas, domaines] = await Promise.all([
+        adminApi.stats(),
+        adminApi.listPros(),
+        adminApi.listRecs(),
+        adminApi.listClients(),
+        adminApi.listServices(),
+        adminApi.listRdv({ take: state.rdvFilter.take }),
+        adminApi.getParams(),
+        adminApi.notifications(),
+        adminApi.listAgendas(),
+        adminApi.listDomaines(),
+      ]);
+      STATS = stats;
+      PROS = pros.map(mapPro); PROS_VIEW = PROS;
+      RECEPTIONNISTES = recs.map(mapRec); RECS_VIEW = RECEPTIONNISTES;
+      CLIENTS_VIEW = clients;
+      SERVICES_VIEW = services;
+      RESERVATIONS = (rdv.items || []).map(mapRdv); RDV_TOTAL = rdv.total;
+      PLATFORM = { ...PLATFORM, ...params };
+      NOTIFS = notifs.map(mapNotif);
+      AGENDAS = agendas;
+      DOMAINES = domaines;
+      return true;
+    } catch (e) { showError(e); return false; }
+  }
+  window.refreshAll = async function refreshAll() {
+    const ok = await loadAll();
+    renderPage(state.page);
+    if (ok) showToast("Données actualisées");
+  }
+
   window.goToPage = function goToPage(page) {
     state.page = page;
-    document.querySelectorAll(".nav-item").forEach((n) => n.classList.toggle("active", n.dataset.page===page));
-    document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.id==="page-"+page));
+    document.querySelectorAll(".nav-item").forEach((n) => n.classList.toggle("active", n.dataset.page === page));
+    document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + page));
     renderPage(page);
   }
   document.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => goToPage(item.dataset.page), { signal: ac.signal }));
@@ -106,484 +185,1350 @@ export default function AdminDashboard() {
   document.getElementById("notifBellBtn").addEventListener("click", () => goToPage("notifs"), { signal: ac.signal });
 
   window.renderPage = function renderPage(page) {
-    if (page==="dashboard") renderDashboard();
-    else if (page==="pros") renderProsPage();
-    else if (page==="receptionnistes") renderRecPage();
-    else if (page==="users") renderUsersPage();
-    else if (page==="clients") renderClientsPage();
-    else if (page==="rdv") renderRdvPage();
-    else if (page==="services") renderServicesPage();
-    else if (page==="agendas") renderAgendasPage();
-    else if (page==="params") renderParamsPage();
-    else if (page==="notifs") renderNotifsPage();
+    if (page === "dashboard") renderDashboard();
+    else if (page === "pros") renderProsPage();
+    else if (page === "receptionnistes") renderRecPage();
+    else if (page === "users") renderUsersPage();
+    else if (page === "clients") renderClientsPage();
+    else if (page === "rdv") renderRdvPage();
+    else if (page === "services") renderServicesPage();
+    else if (page === "agendas") renderAgendasPage();
+    else if (page === "absences") renderAbsencesPage();
+    else if (page === "domaines") renderDomainesPage();
+    else if (page === "params") renderParamsPage();
+    else if (page === "audit") renderAuditPage();
+    else if (page === "notifs") renderNotifsPage();
     updateBadges();
   }
   window.updateBadges = function updateBadges() {
-    document.getElementById("navProBadge").textContent = PROS.filter((p)=>p.statut==="attente").length;
-    document.getElementById("navProBadge").style.display = PROS.some((p)=>p.statut==="attente") ? "inline-block":"none";
-    document.getElementById("navRecBadge").textContent = RECEPTIONNISTES.filter((r)=>r.statut==="attente").length;
-    document.getElementById("navRecBadge").style.display = RECEPTIONNISTES.some((r)=>r.statut==="attente") ? "inline-block":"none";
-    const n = NOTIFS.filter((x)=>x.unread).length;
-    document.getElementById("navNotifBadge").textContent = n; document.getElementById("navNotifBadge").style.display = n?"inline-block":"none";
-    document.getElementById("tbNotifDot").textContent = n; document.getElementById("tbNotifDot").style.display = n?"flex":"none";
+    const pro = PROS.filter((p) => p.statut === "attente").length;
+    const rec = RECEPTIONNISTES.filter((r) => r.statut === "attente").length;
+    const n = NOTIFS.filter((x) => x.unread).length;
+    const set = (id, value, display) => { const el = document.getElementById(id); if (!el) return; el.textContent = value; el.style.display = value ? display : "none"; };
+    set("navProBadge", pro, "inline-block");
+    set("navRecBadge", rec, "inline-block");
+    set("navNotifBadge", n, "inline-block");
+    set("tbNotifDot", n, "flex");
   }
 
-  /* =========================================================
-     ICONES
-     ========================================================= */
-  window.svg = function svg(inner,w) { w=w||15; return `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`; }
+  window.svg = function svg(inner, w) { w = w || 15; return `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`; }
   window.iconCheck = function iconCheck() { return svg('<polyline points="20 6 9 17 4 12"/>'); }
   window.iconX = function iconX() { return svg('<circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'); }
-  window.iconEye = function iconEye() { return svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>',14); }
-  window.iconEdit = function iconEdit() { return svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',14); }
+  window.iconEye = function iconEye() { return svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>', 14); }
+  window.iconEdit = function iconEdit() { return svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>', 14); }
+  window.iconTrash = function iconTrash() { return svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>', 14); }
+  window.iconKey = function iconKey() { return svg('<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/>', 14); }
+  window.iconPlus = function iconPlus() { return svg('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>', 14); }
   window.iconPrinter = function iconPrinter() { return svg('<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>'); }
+  window.iconRefresh = function iconRefresh() { return svg('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', 14); }
   window.iconUsers = function iconUsers() { return svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'); }
   window.iconBriefcase = function iconBriefcase() { return svg('<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>'); }
   window.iconCal = function iconCal() { return svg('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>'); }
-  window.iconAlert = function iconAlert() { return svg('<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',13); }
-  window.iconChevronLeft = function iconChevronLeft() { return svg('<polyline points="15 18 9 12 15 6"/>',14); }
+  window.iconAlert = function iconAlert() { return svg('<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>', 13); }
+  window.iconTag = function iconTag() { return svg('<path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><line x1="7" y1="7" x2="7.01" y2="7"/>'); }
+  window.iconSend = function iconSend() { return svg('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>', 14); }
+  window.iconClock = function iconClock() { return svg('<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>', 14); }
+  window.iconMail = function iconMail() { return svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>', 14); }
+  window.iconChevronLeft = function iconChevronLeft() { return svg('<polyline points="15 18 9 12 15 6"/>', 14); }
+  window.iconChevronRight = function iconChevronRight() { return svg('<polyline points="9 18 15 12 9 6"/>', 14); }
 
-  /* =========================================================
-     PAGE : TABLEAU DE BORD ADMIN
-     ========================================================= */
   window.renderDashboard = function renderDashboard() {
-    const nbPros = PROS.length;
-    const proActifs = PROS.filter((p)=>p.statut==="actif").length;
-    const proDesactives = PROS.filter((p)=>p.statut==="desactive").length;
-    const nbRec = RECEPTIONNISTES.length;
-    const recEnAttente = RECEPTIONNISTES.filter((r)=>r.statut==="attente").length;
-    const nbClients = CLIENTS.length;
-    const nouvelles = RESERVATIONS.filter((r)=>r.etat==="reserve").length;
-    const terminees = RESERVATIONS.filter((r)=>r.etat==="termine").length;
-    const annulees = RESERVATIONS.filter((r)=>r.etat==="annule").length;
-
-    const platformIncomplete = !PLATFORM.desc || !PLATFORM.address || !PLATFORM.phone;
+    const s = STATS || {};
+    const parStatut = s.rdvParStatut || {};
+    const platformIncomplete = !PLATFORM.description || !PLATFORM.address || !PLATFORM.phone;
 
     const statCards = [
-      { label:"Professionnels au total", value:nbPros, icon:iconBriefcase(), bg:"#F1ECFF", color:"#8957FF" },
-      { label:"Professionnels actifs", value:proActifs, icon:iconCheck(), bg:"#E9F7ED", color:"#3FA65C" },
-      { label:"Professionnels désactivés", value:proDesactives, icon:iconX(), bg:"#EEEDF2", color:"#8A8496" },
-      { label:"Réceptionnistes", value:nbRec, icon:iconUsers(), bg:"#E6F7F5", color:"#2FA79D" },
-      { label:"Clients (au moins 1 RDV)", value:nbClients, icon:iconUsers(), bg:"#FDF1E2", color:"#E2954A" },
+      { label: "Professionnels au total", value: s.nbPros ?? 0, icon: iconBriefcase(), bg: "linear-gradient(135deg,#E9E3FF,#D5C8FF)", color: "#7350E8" },
+      { label: "Professionnels actifs", value: s.proActifs ?? 0, icon: iconCheck(), bg: "linear-gradient(135deg,#E9F7ED,#CFEBD8)", color: "#3FA65C" },
+      { label: "Professionnels désactivés", value: s.proDesactives ?? 0, icon: iconX(), bg: "linear-gradient(135deg,#EEEDF2,#E2E0EA)", color: "#8A8496" },
+      { label: "Réceptionnistes", value: s.nbRec ?? 0, icon: iconUsers(), bg: "linear-gradient(135deg,#E6F7F5,#CFEDE8)", color: "#2FA79D" },
+      { label: "Clients (au moins 1 RDV)", value: s.nbClients ?? 0, icon: iconUsers(), bg: "linear-gradient(135deg,#FDF1E2,#FBE0BF)", color: "#E2954A" },
+      { label: "Rendez-vous aujourd'hui", value: s.rdvAujourdhui ?? 0, icon: iconCal(), bg: "linear-gradient(135deg,#E9E3FF,#9B7CF2)", color: "#FFFFFF" },
+      { label: "Professionnels sans domaine", value: s.prosSansDomaine ?? 0, icon: iconTag(), bg: "linear-gradient(135deg,#FDECF3,#F8D2E2)", color: "#E2478A" },
+      { label: "Absences en cours ou à venir", value: s.absencesEnCours ?? 0, icon: iconAlert(), bg: "linear-gradient(135deg,#FDF1E2,#FBE0BF)", color: "#E2954A" },
     ];
-    const resCards = [
-      { label:"Nouvelles réservations", value:nouvelles, cls:"st-reserve" },
-      { label:"Terminées", value:terminees, cls:"st-termine" },
-      { label:"Annulées", value:annulees, cls:"st-annule" },
+    const repartitionDomaines = s.repartitionDomaines || [];
+    const maxDom = repartitionDomaines.length ? Math.max(...repartitionDomaines.map((d) => d.nbProfessionnels), 1) : 1;
+    const resCards = Object.entries(ETAT_LABELS).map(([k, v]) => ({ label: v.label, cls: v.cls, value: parStatut[k] || 0 }));
+    const topServices = s.topServices || [];
+    const maxSv = topServices.length ? Math.max(...topServices.map((t) => t.total)) : 1;
+    const evolution = s.evolution || [];
+    const maxEvo = evolution.length ? Math.max(...evolution.map((e) => e.total)) : 1;
+    const attente = [
+      ...PROS.filter((p) => p.statut === "attente").map((p) => ({ ...p, type: "Professionnel" })),
+      ...RECEPTIONNISTES.filter((r) => r.statut === "attente").map((r) => ({ ...r, type: "Réceptionniste" })),
     ];
-
-    const serviceCounts = {};
-    RESERVATIONS.forEach((r)=>{ if(r.etat!=="annule") serviceCounts[r.service]=(serviceCounts[r.service]||0)+1; });
-    const topServices = Object.entries(serviceCounts).sort((a,b)=>b[1]-a[1]);
-    const maxSv = topServices.length ? topServices[0][1] : 1;
 
     document.getElementById("page-dashboard").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Tableau de bord — Administration</h1><p class="page-sub">Supervision et statistiques globales de la plateforme</p></div></div>
-      ${platformIncomplete ? `<div class="card" style="background:#FDF1E2;border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
+      <div class="page-head">
+        <div><h1 class="page-title">Tableau de bord — Administration</h1><p class="page-sub">Supervision et statistiques globales de la plateforme</p></div>
+        <button class="btn btn-ghost btn-sm" onclick="refreshAll()">${iconRefresh()} Actualiser</button>
+      </div>
+      ${platformIncomplete ? `<div class="card" style="background:linear-gradient(135deg,#FDF1E2,#FBE0BF);border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
         ${iconAlert()} Complétez les paramètres généraux de votre plateforme pour une meilleure présentation auprès de vos clients.
         <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="goToPage('params')">Compléter</button>
       </div>` : ""}
-      <div class="stat-grid">${statCards.map((s)=>`<div class="stat-card"><div class="stat-icon" style="background:${s.bg};color:${s.color}">${s.icon}</div><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join("")}</div>
+      <div class="stat-grid">${statCards.map((c) => `<div class="stat-card"><div class="stat-icon" style="background:${c.bg};color:${c.color}">${c.icon}</div><div class="stat-value">${c.value}</div><div class="stat-label">${c.label}</div></div>`).join("")}</div>
       <div class="dash-grid">
         <div class="card">
           <div class="card-head"><h3>Réservations — répartition par état</h3><button class="btn btn-ghost btn-sm" onclick="goToPage('rdv')">Voir tout</button></div>
-          <div style="display:flex;gap:14px;padding:18px 20px;flex-wrap:wrap;">
-            ${resCards.map((c)=>`<div style="flex:1;min-width:120px;text-align:center;padding:14px;border:1px solid var(--line);border-radius:12px;"><span class="status-pill ${c.cls}" style="margin-bottom:8px;">${c.label}</span><div style="font-size:22px;font-weight:800;margin-top:8px;">${c.value}</div></div>`).join("")}
+          <div style="display:flex;gap:10px;padding:18px 20px;flex-wrap:wrap;">
+            ${resCards.map((c) => `<div style="flex:1;min-width:110px;text-align:center;padding:12px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(135deg,#FBFAFF,#F4EFFF);"><span class="status-pill ${c.cls}" style="margin-bottom:8px;">${c.label}</span><div style="font-size:20px;font-weight:800;margin-top:8px;">${c.value}</div></div>`).join("")}
+          </div>
+          <div style="padding:0 20px 8px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);">
+            <span>Total : <b style="color:var(--ink)">${s.nbRdv ?? 0}</b></span>
+            <span>À venir : <b style="color:var(--ink)">${s.rdvAVenir ?? 0}</b></span>
+            <span>Cette semaine : <b style="color:var(--ink)">${s.rdvSemaine ?? 0}</b></span>
+            <span>Taux d'annulation : <b style="color:var(--ink)">${s.tauxAnnulation ?? 0} %</b></span>
+          </div>
+          <div style="padding:14px 20px 20px;">
+            <div class="detail-item-label" style="margin-bottom:8px;">Services les plus réservés</div>
+            ${topServices.length ? topServices.map((t) => `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${esc(t.nom)}</span><b>${t.total}</b></div><div style="background:var(--primary-soft);border-radius:999px;height:7px;overflow:hidden;"><div style="width:${(t.total / maxSv) * 100}%;background:linear-gradient(90deg,#7350E8,#9B7CF2);height:100%;"></div></div></div>`).join("") : `<div class="table-empty">Aucune réservation enregistrée</div>`}
           </div>
           <div style="padding:0 20px 20px;">
-            <div class="detail-item-label" style="margin-bottom:8px;">Services les plus réservés (tous domaines)</div>
-            ${topServices.slice(0,5).map(([name,count]) => `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${name}</span><b>${count}</b></div><div style="background:var(--paper);border-radius:999px;height:7px;overflow:hidden;"><div style="width:${(count/maxSv)*100}%;background:var(--primary);height:100%;"></div></div></div>`).join("")}
+            <div class="detail-item-label" style="margin-bottom:10px;">Évolution des rendez-vous (6 derniers mois)</div>
+            <div style="display:flex;align-items:flex-end;gap:10px;height:110px;">
+              ${evolution.length ? evolution.map((e) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;justify-content:flex-end;height:100%;"><b style="font-size:11.5px;">${e.total}</b><div style="width:100%;background:linear-gradient(180deg,#9B7CF2,#7350E8);border-radius:8px 8px 0 0;height:${Math.max((e.total / maxEvo) * 100, 4)}%;box-shadow:0 -4px 12px rgba(115,80,232,0.25);"></div><span style="font-size:10.5px;color:var(--ink-soft)">${fmtMois(e.mois)}</span></div>`).join("") : `<div class="table-empty" style="width:100%">Aucune donnée</div>`}
+            </div>
           </div>
         </div>
         <div>
           <div class="card" style="margin-bottom:14px;">
             <div class="card-head"><h3>Inscriptions en attente</h3></div>
-            ${[...PROS.filter(p=>p.statut==="attente").map(p=>({...p,type:"Professionnel"})), ...RECEPTIONNISTES.filter(r=>r.statut==="attente").map(r=>({...r,type:"Réceptionniste"}))].map((x) => `
+            ${attente.map((x) => `
               <div class="dash-list-row">
-                <div class="avatar-sm" style="background:var(--ink-soft)">${initials(x.name)}</div>
-                <div style="flex:1"><div class="dash-list-name">${x.name}</div><div class="dash-list-sub">${x.type}</div></div>
-                <button class="btn btn-ghost btn-sm" onclick="goToPage('${x.type==='Professionnel'?'pros':'receptionnistes'}')">Examiner</button>
+                <div class="avatar-sm" style="background:linear-gradient(135deg,#9B7CF2,#7350E8)">${initials(x.name)}</div>
+                <div style="flex:1"><div class="dash-list-name">${esc(x.name)}</div><div class="dash-list-sub">${x.type}</div></div>
+                <button class="btn btn-primary btn-sm" onclick="setCompteStatut('${x.userId}','actif')">${iconCheck()} Valider</button>
+                <button class="btn btn-danger-ghost btn-sm" onclick="setCompteStatut('${x.userId}','refuse')">Refuser</button>
               </div>`).join("") || `<div class="table-empty">Aucune inscription en attente</div>`}
           </div>
-          <div class="card">
+          <div class="card" style="margin-bottom:14px;">
             <div class="card-head"><h3>Activité récente</h3><button class="btn btn-ghost btn-sm" onclick="goToPage('notifs')">Tout voir</button></div>
-            ${NOTIFS.slice(0,3).map((n) => notifRowHtml(n)).join("")}
+            ${NOTIFS.slice(0, 4).map((n) => notifRowHtml(n)).join("") || `<div class="table-empty">Aucune notification</div>`}
+          </div>
+          <div class="card" style="margin-bottom:14px;">
+            <div class="card-head"><h3>Répartition par domaine</h3><button class="btn btn-ghost btn-sm" onclick="goToPage('domaines')">Gérer</button></div>
+            <div style="padding:14px 20px 18px;">
+              ${repartitionDomaines.length ? repartitionDomaines.map((d) => `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${esc(d.nom)}${d.actif ? "" : " (masqué)"}</span><b>${d.nbProfessionnels}</b></div><div style="background:var(--primary-soft);border-radius:999px;height:7px;overflow:hidden;"><div style="width:${(d.nbProfessionnels / maxDom) * 100}%;background:${d.actif ? "linear-gradient(90deg,#7350E8,#9B7CF2)" : "linear-gradient(90deg,#A8A2BE,#8A8496)"};height:100%;"></div></div></div>`).join("") : `<div class="table-empty">Aucun domaine d'activité défini</div>`}
+              ${(s.prosSansDomaine ?? 0) > 0 ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:10px;">${s.prosSansDomaine} professionnel(s) ne sont rattachés à aucun domaine. <a href="#" style="color:var(--primary-dark);font-weight:700;" onclick="event.preventDefault();filtrerProsSansDomaine()">Les afficher</a></div>` : ""}
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Professionnels les plus sollicités</h3></div>
+            ${(s.topProfessionnels || []).map((p) => `<div class="dash-list-row"><div class="avatar-sm" style="background:${colorFor(p.id)}">${initials(p.nom)}</div><div style="flex:1"><div class="dash-list-name">${esc(p.nom)}</div><div class="dash-list-sub">${p.total} rendez-vous</div></div></div>`).join("") || `<div class="table-empty">Aucune donnée</div>`}
           </div>
         </div>
       </div>
     `;
   }
 
-  /* =========================================================
-     PAGE : PROFESSIONNELS
-     ========================================================= */
   window.renderProsPage = function renderProsPage() {
     document.getElementById("page-pros").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Professionnels</h1><p class="page-sub">Validation des inscriptions, activation des comptes, consultation de l'activité</p></div><button class="btn btn-ghost btn-sm" onclick="exportMock('Liste des professionnels')">${iconPrinter()} Exporter</button></div>
-      <div class="filter-row">
-        <input type="text" placeholder="Rechercher un nom, un e-mail…" oninput="updateProFilter('search', this.value)" style="min-width:220px" />
-        <select onchange="updateProFilter('statut', this.value)"><option value="">Tous les statuts</option>${Object.entries(STATUS_COMPTE).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join("")}</select>
-        <select onchange="updateProFilter('domaine', this.value)"><option value="">Tous les domaines</option>${DOMAINES.map((d)=>`<option value="${d}">${d}</option>`).join("")}</select>
+      <div class="page-head">
+        <div><h1 class="page-title">Professionnels</h1><p class="page-sub">Validation des inscriptions, activation des comptes, consultation de l'activité</p></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="openCreateCompte('PROFESSIONNEL')">${iconPlus()} Nouveau compte</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportProsCsv()">${iconPrinter()} Exporter</button>
+        </div>
       </div>
-      <div class="card"><table class="data-table"><thead><tr><th>Professionnel</th><th>Domaine</th><th>Statut</th><th>Créé le</th><th>Dernière connexion</th><th></th></tr></thead><tbody id="prosTableBody"></tbody></table></div>
+      <div class="filter-row">
+        <input type="text" placeholder="Rechercher un nom, un e-mail…" value="${esc(state.proFilter.search)}" oninput="updateProFilter('search', this.value)" style="min-width:220px" />
+        <select onchange="updateProFilter('statut', this.value)"><option value="">Tous les statuts</option>${Object.entries(STATUS_COMPTE).map(([k, v]) => `<option value="${k}" ${state.proFilter.statut === k ? "selected" : ""}>${v.label}</option>`).join("")}</select>
+        <select onchange="updateProFilter('domaineId', this.value)">
+          <option value="">Tous les domaines</option>
+          <option value="AUCUN" ${state.proFilter.domaineId === "AUCUN" ? "selected" : ""}>Sans domaine</option>
+          ${DOMAINES.map((d) => `<option value="${d.id}" ${state.proFilter.domaineId === d.id ? "selected" : ""}>${esc(d.nom)}</option>`).join("")}
+        </select>
+      </div>
+      <div id="prosBulkBar"></div>
+      <div class="card"><table class="data-table"><thead><tr><th style="width:34px"><input type="checkbox" id="prosCheckAll" onchange="toggleAllSelection('pros', this.checked)" /></th><th>Professionnel</th><th>Domaine</th><th>Services</th><th>Statut</th><th>Créé le</th><th>Dernière connexion</th><th></th></tr></thead><tbody id="prosTableBody"></tbody></table></div>
     `;
     renderProsTable();
   }
-  window.updateProFilter = function updateProFilter(k,v){ state.proFilter[k]=v; renderProsTable(); }
+  window.filtrerProsSansDomaine = function filtrerProsSansDomaine() {
+    state.proFilter = { statut: "", search: "", domaineId: "AUCUN" };
+    goToPage("pros");
+    reloadPros();
+  }
+  const reloadProsDebounced = debounce(() => reloadPros());
+  window.updateProFilter = function updateProFilter(k, v) { state.proFilter[k] = v; reloadProsDebounced(); }
+  window.reloadPros = async function reloadPros() {
+    try {
+      const f = state.proFilter;
+      const data = await adminApi.listPros({
+        statut: f.statut ? STATUT_API[f.statut] : undefined,
+        search: f.search || undefined,
+        domaineId: f.domaineId || undefined,
+      });
+      PROS_VIEW = data.map(mapPro);
+      const visibles = new Set(PROS_VIEW.map((p) => p.userId));
+      SELECTION.pros = new Set([...SELECTION.pros].filter((id) => visibles.has(id)));
+      renderProsTable();
+    } catch (e) { showError(e); }
+  }
   window.renderProsTable = function renderProsTable() {
-    const f = state.proFilter;
-    let rows = PROS.filter((p) => (!f.statut||p.statut===f.statut) && (!f.domaine||p.domaine===f.domaine) && (!f.search||p.name.toLowerCase().includes(f.search.toLowerCase())||p.email.toLowerCase().includes(f.search.toLowerCase())));
     const body = document.getElementById("prosTableBody");
-    if (!rows.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucun professionnel trouvé</div></td></tr>`; return; }
-    body.innerHTML = rows.map((p) => `<tr class="row-clickable" onclick="openProFiche('${p.id}')">
-      <td><div class="cell-client"><div class="avatar-sm" style="background:${p.color}">${initials(p.name)}</div><div><div class="cell-client-name">${p.name}</div><div class="cell-client-sub">${p.role}</div></div></div></td>
-      <td>${p.domaine}</td>
+    if (!body) return;
+    if (!PROS_VIEW.length) { body.innerHTML = `<tr><td colspan="8"><div class="table-empty">Aucun professionnel trouvé</div></td></tr>`; renderBulkBar("pros"); return; }
+    body.innerHTML = PROS_VIEW.map((p) => `<tr class="row-clickable" onclick="openProFiche('${p.id}')">
+      <td onclick="event.stopPropagation()"><input type="checkbox" ${SELECTION.pros.has(p.userId) ? "checked" : ""} onchange="toggleSelection('pros','${p.userId}', this.checked)" /></td>
+      <td><div class="cell-client"><div class="avatar-sm" style="background:${p.color}">${initials(p.name)}</div><div><div class="cell-client-name">${esc(p.name)}</div><div class="cell-client-sub">${esc(p.role)}</div></div></div></td>
+      <td>${p.domaine ? `<span class="status-pill st-reserve">${esc(p.domaine)}</span>` : `<span class="dash-list-sub">—</span>`}</td>
+      <td>${p.nbServices}</td>
       <td><span class="status-pill ${STATUS_COMPTE[p.statut].cls}">${STATUS_COMPTE[p.statut].label}</span></td>
       <td>${fmtDateShort(p.createdAt)}</td><td>${p.lastLogin}</td>
-      <td><div class="row-actions" onclick="event.stopPropagation()"><button class="icon-btn" onclick="openProFiche('${p.id}')">${iconEye()}</button></div></td>
+      <td><div class="row-actions" onclick="event.stopPropagation()">
+        <button class="icon-btn" title="Consulter la fiche" onclick="openProFiche('${p.id}')">${iconEye()}</button>
+        <button class="icon-btn" title="Modifier la fiche" onclick="openEditPro('${p.id}')">${iconEdit()}</button>
+        <button class="icon-btn" title="Agenda" onclick="openAgenda('${p.id}')">${iconCal()}</button>
+        <button class="icon-btn" title="Réinitialiser le mot de passe" onclick="openResetPassword('${p.userId}','${escArg(p.name)}')">${iconKey()}</button>
+      </div></td>
     </tr>`).join("");
+    renderBulkBar("pros");
   }
-  window.openProFiche = function openProFiche(id) {
-    const p = PROS.find((x)=>x.id===id); if (!p) return;
-    const recs = RECEPTIONNISTES.filter((r) => r.pros.includes(p.id));
-    const html = `
-      <div class="modal-head">
-        <div style="display:flex;align-items:center;gap:12px;"><div class="avatar-sm" style="width:42px;height:42px;font-size:15px;background:${p.color}">${initials(p.name)}</div><div><p class="modal-title">${p.name}</p><p class="modal-sub">${p.role} · ${p.domaine}</p></div></div>
-        <button class="modal-close" onclick="closeModal()">×</button>
-      </div>
-      <div class="detail-grid">
-        <div><div class="detail-item-label">E-mail</div><div class="detail-item-value">${p.email}</div></div>
-        <div><div class="detail-item-label">Téléphone</div><div class="detail-item-value">${p.phone}</div></div>
-        <div><div class="detail-item-label">Statut du compte</div><div class="detail-item-value"><span class="status-pill ${STATUS_COMPTE[p.statut].cls}">${STATUS_COMPTE[p.statut].label}</span></div></div>
-        <div><div class="detail-item-label">Créé le</div><div class="detail-item-value">${fmtDateShort(p.createdAt)}</div></div>
-        <div><div class="detail-item-label">Dernière connexion</div><div class="detail-item-value">${p.lastLogin}</div></div>
-        <div><div class="detail-item-label">Réceptionnistes affectées</div><div class="detail-item-value">${recs.length}</div></div>
-      </div>
-      <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px;">
-        <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:17px;">${p.nbServices}</div><div class="stat-label">Services</div></div>
-        <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:17px;">${p.nbRdv}</div><div class="stat-label">Rendez-vous</div></div>
-        <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:17px;">${p.nbClients}</div><div class="stat-label">Clients</div></div>
-        <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:17px;">${p.nbReceptionnistes}</div><div class="stat-label">Réceptionnistes</div></div>
-      </div>
-      ${recs.length ? `<div class="detail-item-label" style="margin-bottom:8px;">Réceptionnistes associées</div><div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">${recs.map((r)=>`<div class="dash-list-row" style="padding:8px 0;"><div class="avatar-sm" style="background:#E2478A">${initials(r.name)}</div><div style="flex:1"><div class="dash-list-name" style="font-size:12.5px;">${r.name}</div></div></div>`).join("")}</div>` : ""}
-      <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;">
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          ${p.statut==="attente" ? `<button class="btn btn-primary btn-sm" onclick="setProStatut('${p.id}','actif')">${iconCheck()} Valider l'inscription</button><button class="btn btn-danger-ghost btn-sm" onclick="setProStatut('${p.id}','refuse')">${iconX()} Refuser</button>` : ""}
-          ${p.statut==="actif" ? `<button class="btn btn-ghost btn-sm" onclick="setProStatut('${p.id}','desactive')">${iconX()} Désactiver le compte</button>` : ""}
-          ${p.statut==="desactive" ? `<button class="btn btn-primary btn-sm" onclick="setProStatut('${p.id}','actif')">${iconCheck()} Réactiver le compte</button>` : ""}
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="closeModal()">Fermer</button>
-      </div>
-    `;
-    openModal(html, true);
-  }
-  window.setProStatut = function setProStatut(id, statut) {
-    const p = PROS.find((x)=>x.id===id); if (!p) return;
-    p.statut = statut; closeModal(); renderProsTable(); updateBadges();
-    showToast(`${p.name} — statut mis à jour : <b>${STATUS_COMPTE[statut].label}</b>`);
+  window.exportProsCsv = function exportProsCsv() {
+    const f = state.proFilter;
+    exportCsv("professionnels", "professionnels.csv", {
+      statut: f.statut ? STATUT_API[f.statut] : undefined, search: f.search || undefined, domaineId: f.domaineId || undefined,
+    });
   }
 
-  /* =========================================================
-     PAGE : RÉCEPTIONNISTES
-     ========================================================= */
+  const SELECTION_SOURCE = { pros: () => PROS_VIEW, recs: () => RECS_VIEW };
+  window.toggleSelection = function toggleSelection(scope, userId, checked) {
+    if (checked) SELECTION[scope].add(userId); else SELECTION[scope].delete(userId);
+    renderBulkBar(scope);
+    const all = document.getElementById(scope === "pros" ? "prosCheckAll" : "recsCheckAll");
+    if (all) all.checked = SELECTION[scope].size === SELECTION_SOURCE[scope]().length && SELECTION[scope].size > 0;
+  }
+  window.toggleAllSelection = function toggleAllSelection(scope, checked) {
+    SELECTION[scope] = checked ? new Set(SELECTION_SOURCE[scope]().map((x) => x.userId)) : new Set();
+    if (scope === "pros") renderProsTable(); else renderRecTable();
+  }
+  window.renderBulkBar = function renderBulkBar(scope) {
+    const bar = document.getElementById(scope === "pros" ? "prosBulkBar" : "recsBulkBar");
+    if (!bar) return;
+    const n = SELECTION[scope].size;
+    if (!n) { bar.innerHTML = ""; return; }
+    bar.innerHTML = `<div class="card" style="padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:linear-gradient(135deg, #7350E8 0%, #9B7CF2 100%);border-color:transparent;color:#fff;box-shadow:0 8px 20px rgba(115,80,232,0.35);">
+      <b style="font-size:12.5px;">${n} compte(s) sélectionné(s)</b>
+      <button class="btn btn-sm" style="background:#fff;color:#7350E8;" onclick="applyBulkStatut('${scope}','actif')">${iconCheck()} Valider / activer</button>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.35);" onclick="applyBulkStatut('${scope}','desactive')">${iconX()} Désactiver</button>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.35);" onclick="applyBulkStatut('${scope}','refuse')">Refuser</button>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.35);" onclick="openAnnonce('${scope}')">${iconSend()} Envoyer une annonce</button>
+      <button class="btn btn-sm" style="margin-left:auto;background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);" onclick="toggleAllSelection('${scope}', false)">Tout désélectionner</button>
+    </div>`;
+  }
+  window.applyBulkStatut = async function applyBulkStatut(scope, statutUi) {
+    const userIds = [...SELECTION[scope]];
+    if (!userIds.length) return;
+    try {
+      const res = await adminApi.setStatutGroupe(userIds, STATUT_API[statutUi]);
+      SELECTION[scope] = new Set();
+      await loadAll();
+      await Promise.all([reloadPros(), reloadRecs()]);
+      renderPage(state.page);
+      const ignores = res.ignores?.length ? ` — ${res.ignores.length} ignoré(s)` : "";
+      showToast(`${res.traites.length} compte(s) mis à jour${ignores}`);
+    } catch (e) { showError(e); }
+  }
+  window.openProFiche = async function openProFiche(id) {
+    try {
+      const p = await adminApi.getPro(id);
+      const statut = STATUT_UI[p.statutCompte];
+      const color = colorFor(p.id);
+      const html = `
+        <div class="modal-head">
+          <div style="display:flex;align-items:center;gap:12px;"><div class="avatar-sm" style="width:42px;height:42px;font-size:15px;background:${color}">${initials(p.nom)}</div><div><p class="modal-title">${esc(p.nom)}</p><p class="modal-sub">${esc(p.specialite || "—")}</p></div></div>
+          <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        <div class="detail-grid">
+          <div><div class="detail-item-label">E-mail</div><div class="detail-item-value">${esc(p.email)}</div></div>
+          <div><div class="detail-item-label">Téléphone</div><div class="detail-item-value">${esc(p.telephone || "—")}</div></div>
+          <div><div class="detail-item-label">Statut du compte</div><div class="detail-item-value"><span class="status-pill ${STATUS_COMPTE[statut].cls}">${STATUS_COMPTE[statut].label}</span></div></div>
+          <div><div class="detail-item-label">Créé le</div><div class="detail-item-value">${fmtDateShort(p.createdAt)}</div></div>
+          <div><div class="detail-item-label">Dernière connexion</div><div class="detail-item-value">${fmtRelative(p.lastLoginAt)}</div></div>
+          <div><div class="detail-item-label">E-mail vérifié</div><div class="detail-item-value">${p.emailVerifie ? "Oui" : "Non"}</div></div>
+          <div><div class="detail-item-label">Adresse</div><div class="detail-item-value">${esc(p.adresse || "—")}</div></div>
+          <div><div class="detail-item-label">Domaine d'activité</div><div class="detail-item-value">
+            <select onchange="setProDomaine('${p.id}', this.value)" style="max-width:220px">
+              <option value="">— Aucun domaine —</option>
+              ${DOMAINES.map((d) => `<option value="${d.id}" ${p.domaineId === d.id ? "selected" : ""}>${esc(d.nom)}${d.actif ? "" : " (masqué)"}</option>`).join("")}
+            </select>
+          </div></div>
+        </div>
+        <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px;">
+          <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:17px;">${p.nbServices}</div><div class="stat-label">Services</div></div>
+          <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:17px;">${p.nbRdv}</div><div class="stat-label">Rendez-vous</div></div>
+          <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:17px;">${p.nbClients}</div><div class="stat-label">Clients</div></div>
+          <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:17px;">${p.nbReceptionnistes}</div><div class="stat-label">Réceptionnistes</div></div>
+        </div>
+        <div class="detail-item-label" style="margin-bottom:8px;">Services proposés</div>
+        <div style="margin-bottom:16px;">${p.services.length ? p.services.map((sv) => `<div class="dash-list-row" style="padding:8px 0;"><div style="flex:1"><div class="dash-list-name" style="font-size:12.5px;">${esc(sv.nom)}</div><div class="dash-list-sub">${sv.dureeMinutes} min · ${fmtPrix(sv.prix)}</div></div><span class="status-pill ${sv.actif ? "st-termine" : "st-absent"}">${sv.actif ? "Actif" : "Désactivé"}</span></div>`).join("") : `<div class="table-empty">Aucun service</div>`}</div>
+        <div class="detail-item-label" style="margin-bottom:8px;">Disponibilités hebdomadaires</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">${p.disponibilites.length ? p.disponibilites.map((d) => `<span class="status-pill st-reserve">${JOURS[d.jourSemaine]} ${d.heureDebut}–${d.heureFin}</span>`).join("") : `<span class="dash-list-sub">Aucune disponibilité définie</span>`}</div>
+        ${p.parametresReservation ? `<div class="detail-item-label" style="margin-bottom:8px;">Règles de réservation du professionnel</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+          <span class="status-pill st-reserve">Intervalle : ${p.parametresReservation.intervalleMinutes} min</span>
+          <span class="status-pill st-reserve">Délai min. : ${p.parametresReservation.delaiMinHeures} h</span>
+          <span class="status-pill st-reserve">Horizon : ${p.parametresReservation.delaiMaxJours} j</span>
+          <span class="status-pill st-reserve">Max ${p.parametresReservation.maxRdvParClientParJour} RDV/client/jour</span>
+          <span class="status-pill st-absent">Seuil absences : ${p.parametresReservation.seuilAbsences}</span>
+        </div>` : ""}
+        ${p.receptionnistes.length ? `<div class="detail-item-label" style="margin-bottom:8px;">Réceptionnistes associées</div><div style="margin-bottom:16px;">${p.receptionnistes.map((r) => `<div class="dash-list-row" style="padding:8px 0;"><div class="avatar-sm" style="background:${colorFor(r.receptionnisteId)}">${initials(r.nom)}</div><div style="flex:1"><div class="dash-list-name" style="font-size:12.5px;">${esc(r.nom)}</div><div class="dash-list-sub">${esc(r.email)}</div></div><span class="status-pill ${r.actifSurEspace ? "st-termine" : "st-absent"}" title="Activation décidée par le professionnel">${r.actifSurEspace ? "Active ici" : "Suspendue ici"}</span><button class="btn btn-ghost btn-sm" onclick="openPermissions('${r.affectationId}')">${iconEdit()} Autorisations</button></div>`).join("")}</div>` : ""}
+        <div class="detail-item-label" style="margin-bottom:8px;">10 derniers rendez-vous</div>
+        <div style="margin-bottom:16px;">${p.derniersRdv.length ? p.derniersRdv.map((r) => `<div class="dash-list-row" style="padding:8px 0;"><div style="flex:1"><div class="dash-list-name" style="font-size:12.5px;">${esc(r.client.prenom + " " + r.client.nom)}</div><div class="dash-list-sub">${esc(r.service.nom)} · ${fmtDateTime(r.dateDebut)}</div></div><span class="status-pill ${ETAT_LABELS[r.statut].cls}">${ETAT_LABELS[r.statut].label}</span></div>`).join("") : `<div class="table-empty">Aucun rendez-vous</div>`}</div>
+        <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${statut === "attente" ? `<button class="btn btn-primary btn-sm" onclick="setCompteStatut('${p.userId}','actif')">${iconCheck()} Valider l'inscription</button><button class="btn btn-danger-ghost btn-sm" onclick="setCompteStatut('${p.userId}','refuse')">${iconX()} Refuser</button>` : ""}
+            ${statut === "actif" ? `<button class="btn btn-ghost btn-sm" onclick="setCompteStatut('${p.userId}','desactive')">${iconX()} Désactiver le compte</button>` : ""}
+            ${(statut === "desactive" || statut === "refuse") ? `<button class="btn btn-primary btn-sm" onclick="setCompteStatut('${p.userId}','actif')">${iconCheck()} Réactiver le compte</button>` : ""}
+            <button class="btn btn-ghost btn-sm" onclick="openEditPro('${p.id}')">${iconEdit()} Modifier la fiche</button>
+            <button class="btn btn-ghost btn-sm" onclick="openResetPassword('${p.userId}','${escArg(p.nom)}')">${iconKey()} Mot de passe</button>
+            <button class="btn btn-ghost btn-sm" onclick="openChangeEmail('${p.userId}','${escArg(p.email)}')">${iconMail()} Changer l'e-mail</button>
+            <button class="btn btn-ghost btn-sm" onclick="openAgenda('${p.id}')">${iconCal()} Agenda</button>
+            <button class="btn btn-danger-ghost btn-sm" onclick="askDeleteCompte('${p.userId}','${escArg(p.nom)}')">${iconTrash()} Supprimer</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="closeModal()">Fermer</button>
+        </div>
+      `;
+      openModal(html, true);
+    } catch (e) { showError(e); }
+  }
+
+  window.openEditPro = async function openEditPro(id) {
+    try {
+      const p = await adminApi.getPro(id);
+      openModal(`
+        <div class="modal-head"><div><p class="modal-title">Modifier la fiche</p><p class="modal-sub">${esc(p.nom)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+        <div class="field-row"><label>Nom complet</label><input type="text" id="epNom" value="${esc(p.nom)}" /></div>
+        <div class="field-2col">
+          <div class="field-row"><label>Fonction / spécialité</label><input type="text" id="epSpec" value="${esc(p.specialite || "")}" /></div>
+          <div class="field-row"><label>Téléphone</label><input type="text" id="epTel" value="${esc(p.telephone || "")}" /></div>
+        </div>
+        <div class="field-row"><label>Adresse du cabinet</label><input type="text" id="epAdr" value="${esc(p.adresse || "")}" /></div>
+        <div class="field-row"><label>Présentation publique</label><textarea id="epDesc" rows="3">${esc(p.description || "")}</textarea></div>
+        <div class="field-row"><label>URL de la photo</label><input type="text" id="epPhoto" value="${esc(p.photoUrl || "")}" placeholder="https://…" /></div>
+        <div class="field-hint">Le professionnel est notifié de la modification. L'adresse e-mail se change séparément.</div>
+        <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveEditPro('${id}')">${iconCheck()} Enregistrer</button></div>
+      `);
+    } catch (e) { showError(e); }
+  }
+  window.saveEditPro = async function saveEditPro(id) {
+    const nom = val("epNom");
+    if (nom.length < 2) { showToast("Le nom doit contenir au moins 2 caractères"); return; }
+    try {
+      await adminApi.updatePro(id, {
+        nom, specialite: val("epSpec"), telephone: val("epTel"),
+        adresse: val("epAdr"), description: val("epDesc"), photoUrl: val("epPhoto"),
+      });
+      closeModal();
+      await loadAll();
+      await reloadPros();
+      renderPage(state.page);
+      showToast("Fiche du professionnel mise à jour");
+    } catch (e) { showError(e); }
+  }
+  window.openEditRec = async function openEditRec(id) {
+    const r = RECS_VIEW.find((x) => x.id === id) || RECEPTIONNISTES.find((x) => x.id === id);
+    if (!r) { showToast("Réceptionniste introuvable — actualisez la page"); return; }
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Modifier la fiche</p><p class="modal-sub">${esc(r.name)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-row"><label>Nom complet</label><input type="text" id="erNom" value="${esc(r.name)}" /></div>
+      <div class="field-row"><label>Téléphone</label><input type="text" id="erTel" value="${esc(r.phone === "—" ? "" : r.phone)}" /></div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveEditRec('${id}')">${iconCheck()} Enregistrer</button></div>
+    `);
+  }
+  window.saveEditRec = async function saveEditRec(id) {
+    const nom = val("erNom");
+    if (nom.length < 2) { showToast("Le nom doit contenir au moins 2 caractères"); return; }
+    try {
+      await adminApi.updateRec(id, { nom, telephone: val("erTel") });
+      closeModal();
+      await loadAll();
+      await reloadRecs();
+      renderPage(state.page);
+      showToast("Fiche de la réceptionniste mise à jour");
+    } catch (e) { showError(e); }
+  }
+  window.openChangeEmail = function openChangeEmail(userId, emailActuel) {
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Changer l'adresse e-mail</p><p class="modal-sub">${esc(emailActuel)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-row"><label>Nouvelle adresse de connexion</label><input type="email" id="ceEmail" value="${esc(emailActuel)}" /></div>
+      <div class="field-hint">C'est l'identifiant de connexion du compte. L'adresse repasse à « non vérifiée » et le titulaire est notifié.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveChangeEmail('${userId}')">${iconCheck()} Enregistrer</button></div>
+    `);
+  }
+  window.saveChangeEmail = async function saveChangeEmail(userId) {
+    const email = val("ceEmail");
+    if (!email.includes("@")) { showToast("Adresse e-mail invalide"); return; }
+    try {
+      await adminApi.updateEmail(userId, email);
+      closeModal();
+      await loadAll();
+      await Promise.all([reloadPros(), reloadRecs()]);
+      renderPage(state.page);
+      showToast("Adresse e-mail mise à jour");
+    } catch (e) { showError(e); }
+  }
+  window.setProDomaine = async function setProDomaine(professionnelId, domaineId) {
+    try {
+      await adminApi.setProDomaine(professionnelId, domaineId || null);
+      await loadAll();
+      await reloadPros();
+      showToast(domaineId ? "Professionnel rattaché au domaine" : "Professionnel détaché de son domaine");
+    } catch (e) { showError(e); }
+  }
+
+  window.setCompteStatut = async function setCompteStatut(userId, statutUi) {
+    try {
+      await adminApi.setStatut(userId, STATUT_API[statutUi]);
+      closeModal();
+      await loadAll();
+      await reloadPros();
+      await reloadRecs();
+      renderPage(state.page);
+      showToast(`Statut mis à jour : <b>${STATUS_COMPTE[statutUi].label}</b>`);
+    } catch (e) { showError(e); }
+  }
+  window.openCreateCompte = function openCreateCompte(role) {
+    const titre = role === "PROFESSIONNEL" ? "Nouveau professionnel" : role === "ADMIN" ? "Nouvel administrateur" : "Nouvelle réceptionniste";
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">${titre}</p><p class="modal-sub">Le compte est actif immédiatement (créé par l'administrateur)</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-row"><label>Nom complet *</label><input type="text" id="ncNom" placeholder="Nom et prénom" /></div>
+      <div class="field-2col">
+        <div class="field-row"><label>E-mail *</label><input type="email" id="ncEmail" placeholder="nom@exemple.com" /></div>
+        <div class="field-row"><label>Téléphone</label><input type="text" id="ncTel" /></div>
+      </div>
+      <div class="field-row"><label>Mot de passe provisoire * (8 caractères minimum)</label><input type="text" id="ncPwd" value="${suggestPassword()}" /></div>
+      ${role === "PROFESSIONNEL" ? `<div class="field-2col">
+        <div class="field-row"><label>Fonction / spécialité</label><input type="text" id="ncSpec" placeholder="Ex. Médecin généraliste" /></div>
+        <div class="field-row"><label>Domaine d'activité</label><select id="ncDomaine"><option value="">— Aucun —</option>${DOMAINES.filter((d) => d.actif).map((d) => `<option value="${d.id}">${esc(d.nom)}</option>`).join("")}</select></div>
+      </div>` : ""}
+      ${role === "ADMIN" ? `<div class="field-hint" style="color:#8A5A1E;">Un administrateur dispose de tous les droits de supervision de la plateforme. Le nom saisi n'est conservé que dans le journal d'audit : un compte Admin n'a pas de fiche métier.</div>` : ""}
+      <div class="field-hint">Communiquez le mot de passe provisoire à la personne concernée : elle pourra le modifier depuis son espace.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveCompte('${role}')">${iconCheck()} Créer le compte</button></div>
+    `);
+  }
+  window.saveCompte = async function saveCompte(role) {
+    const payload = { role, nom: val("ncNom"), email: val("ncEmail"), password: val("ncPwd") };
+    if (val("ncTel")) payload.telephone = val("ncTel");
+    if (role === "PROFESSIONNEL" && val("ncSpec")) payload.specialite = val("ncSpec");
+    if (role === "PROFESSIONNEL" && val("ncDomaine")) payload.domaineId = val("ncDomaine");
+    if (!payload.nom || !payload.email || payload.password.length < 8) { showToast("Nom, e-mail et mot de passe (8 caractères min.) sont obligatoires"); return; }
+    try {
+      await adminApi.createCompte(payload);
+      closeModal();
+      await loadAll();
+      renderPage(state.page);
+      showToast(`Compte créé : <b>${esc(payload.email)}</b>`);
+    } catch (e) { showError(e); }
+  }
+  window.openResetPassword = function openResetPassword(userId, name) {
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Réinitialiser le mot de passe</p><p class="modal-sub">${esc(name)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-row"><label>Nouveau mot de passe (8 caractères minimum)</label><input type="text" id="rpPwd" value="${suggestPassword()}" /></div>
+      <div class="field-hint">Le titulaire du compte reçoit une notification l'informant de la réinitialisation.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveResetPassword('${userId}')">${iconCheck()} Réinitialiser</button></div>
+    `);
+  }
+  window.saveResetPassword = async function saveResetPassword(userId) {
+    const password = val("rpPwd");
+    if (password.length < 8) { showToast("Le mot de passe doit contenir au moins 8 caractères"); return; }
+    try { await adminApi.resetPassword(userId, password); closeModal(); showToast("Mot de passe réinitialisé"); }
+    catch (e) { showError(e); }
+  }
+  window.askDeleteCompte = function askDeleteCompte(userId, name) {
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Supprimer le compte</p><p class="modal-sub">${esc(name)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-hint" style="margin-bottom:14px;">Cette action est définitive. Elle est refusée si des rendez-vous sont rattachés au compte : dans ce cas, désactivez-le pour conserver l'historique.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-danger-ghost" onclick="confirmDeleteCompte('${userId}')">${iconTrash()} Supprimer définitivement</button></div>
+    `);
+  }
+  window.confirmDeleteCompte = async function confirmDeleteCompte(userId) {
+    try {
+      await adminApi.deleteCompte(userId);
+      closeModal();
+      await loadAll();
+      await reloadPros();
+      await reloadRecs();
+      renderPage(state.page);
+      showToast("Compte supprimé");
+    } catch (e) { showError(e); }
+  }
+
   window.renderRecPage = function renderRecPage() {
     document.getElementById("page-receptionnistes").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Réceptionnistes</h1><p class="page-sub">Validation, activation et affectation aux professionnels</p></div></div>
-      <div class="filter-row"><input type="text" placeholder="Rechercher…" oninput="updateRecFilter(this.value)" style="min-width:220px" /></div>
-      <div class="card"><table class="data-table"><thead><tr><th>Réceptionniste</th><th>E-mail</th><th>Statut</th><th>Professionnels affectés</th><th></th></tr></thead><tbody id="recTableBody"></tbody></table></div>
+      <div class="page-head">
+        <div><h1 class="page-title">Réceptionnistes</h1><p class="page-sub">Validation, activation, affectation aux professionnels et autorisations</p></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="openCreateCompte('RECEPTIONNISTE')">${iconPlus()} Nouveau compte</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportRecsCsv()">${iconPrinter()} Exporter</button>
+        </div>
+      </div>
+      <div class="filter-row">
+        <input type="text" placeholder="Rechercher…" value="${esc(state.recFilter.search)}" oninput="updateRecFilter('search', this.value)" style="min-width:220px" />
+        <select onchange="updateRecFilter('statut', this.value)"><option value="">Tous les statuts</option>${Object.entries(STATUS_COMPTE).map(([k, v]) => `<option value="${k}" ${state.recFilter.statut === k ? "selected" : ""}>${v.label}</option>`).join("")}</select>
+      </div>
+      <div id="recsBulkBar"></div>
+      <div class="card"><table class="data-table"><thead><tr><th style="width:34px"><input type="checkbox" id="recsCheckAll" onchange="toggleAllSelection('recs', this.checked)" /></th><th>Réceptionniste</th><th>E-mail</th><th>Statut</th><th>Professionnels affectés</th><th></th></tr></thead><tbody id="recTableBody"></tbody></table></div>
     `;
     renderRecTable();
   }
-  window.updateRecFilter = function updateRecFilter(v) { state.recFilter.search=v; renderRecTable(); }
+  const reloadRecsDebounced = debounce(() => reloadRecs());
+  window.updateRecFilter = function updateRecFilter(k, v) { state.recFilter[k] = v; reloadRecsDebounced(); }
+  window.reloadRecs = async function reloadRecs() {
+    try {
+      const f = state.recFilter;
+      const data = await adminApi.listRecs({ statut: f.statut ? STATUT_API[f.statut] : undefined, search: f.search || undefined });
+      RECS_VIEW = data.map(mapRec);
+      const visibles = new Set(RECS_VIEW.map((r) => r.userId));
+      SELECTION.recs = new Set([...SELECTION.recs].filter((id) => visibles.has(id)));
+      renderRecTable();
+    } catch (e) { showError(e); }
+  }
   window.renderRecTable = function renderRecTable() {
-    const q = state.recFilter.search.toLowerCase();
-    let rows = RECEPTIONNISTES.filter((r) => !q || r.name.toLowerCase().includes(q));
     const body = document.getElementById("recTableBody");
-    if (!rows.length) { body.innerHTML = `<tr><td colspan="5"><div class="table-empty">Aucune réceptionniste trouvée</div></td></tr>`; return; }
-    body.innerHTML = rows.map((r) => `<tr>
-      <td><div class="cell-client"><div class="avatar-sm" style="background:#E2478A">${initials(r.name)}</div><div class="cell-client-name">${r.name}</div></div></td>
-      <td>${r.email}</td>
+    if (!body) return;
+    if (!RECS_VIEW.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucune réceptionniste trouvée</div></td></tr>`; renderBulkBar("recs"); return; }
+    body.innerHTML = RECS_VIEW.map((r) => `<tr>
+      <td><input type="checkbox" ${SELECTION.recs.has(r.userId) ? "checked" : ""} onchange="toggleSelection('recs','${r.userId}', this.checked)" /></td>
+      <td><div class="cell-client"><div class="avatar-sm" style="background:${colorFor(r.id)}">${initials(r.name)}</div><div><div class="cell-client-name">${esc(r.name)}</div><div class="cell-client-sub">${esc(r.phone)}</div></div></div></td>
+      <td>${esc(r.email)}</td>
       <td><span class="status-pill ${STATUS_COMPTE[r.statut].cls}">${STATUS_COMPTE[r.statut].label}</span></td>
-      <td>${r.pros.map((pid) => PROS.find((p)=>p.id===pid)?.name).filter(Boolean).join(", ") || "Aucun"}</td>
+      <td>${r.affectations.length ? r.affectations.map((a) => `<span class="status-pill ${a.actifSurEspace ? "st-reserve" : "st-absent"}" style="margin:2px 2px 2px 0;cursor:pointer" title="${a.actifSurEspace ? "Active sur cet espace" : "Suspendue par le professionnel sur cet espace"} — cliquer pour les autorisations" onclick="openPermissions('${a.affectationId}')">${esc(a.nom)}</span>`).join("") : "Aucun"}</td>
       <td><div class="row-actions">
-        <button class="btn btn-ghost btn-sm" onclick="openAffectForm('${r.id}')">${iconEdit()} Affecter</button>
-        ${r.statut==="attente" ? `<button class="icon-btn" title="Valider" onclick="setRecStatut('${r.id}','actif')">${iconCheck()}</button>` : `<button class="icon-btn" title="${r.statut==='actif'?'Désactiver':'Activer'}" onclick="setRecStatut('${r.id}','${r.statut==='actif'?'desactive':'actif'}')">${r.statut==='actif'?iconX():iconCheck()}</button>`}
+        <button class="btn btn-ghost btn-sm" onclick="openAffectForm('${r.id}')">${iconUsers()} Affecter</button>
+        <button class="icon-btn" title="Modifier la fiche" onclick="openEditRec('${r.id}')">${iconEdit()}</button>
+        ${r.statut === "attente"
+          ? `<button class="icon-btn" title="Valider" onclick="setCompteStatut('${r.userId}','actif')">${iconCheck()}</button><button class="icon-btn" title="Refuser" onclick="setCompteStatut('${r.userId}','refuse')">${iconX()}</button>`
+          : `<button class="icon-btn" title="${r.statut === "actif" ? "Désactiver" : "Activer"}" onclick="setCompteStatut('${r.userId}','${r.statut === "actif" ? "desactive" : "actif"}')">${r.statut === "actif" ? iconX() : iconCheck()}</button>`}
+        <button class="icon-btn" title="Réinitialiser le mot de passe" onclick="openResetPassword('${r.userId}','${escArg(r.name)}')">${iconKey()}</button>
+        <button class="icon-btn" title="Changer l'e-mail" onclick="openChangeEmail('${r.userId}','${escArg(r.email)}')">${iconMail()}</button>
+        <button class="icon-btn" title="Supprimer" onclick="askDeleteCompte('${r.userId}','${escArg(r.name)}')">${iconTrash()}</button>
       </div></td>
     </tr>`).join("");
+    renderBulkBar("recs");
   }
-  window.setRecStatut = function setRecStatut(id, statut) { const r=RECEPTIONNISTES.find((x)=>x.id===id); if(!r) return; r.statut=statut; renderRecTable(); updateBadges(); showToast(`${r.name} — statut : ${STATUS_COMPTE[statut].label}`); }
+  window.exportRecsCsv = function exportRecsCsv() {
+    const f = state.recFilter;
+    exportCsv("receptionnistes", "receptionnistes.csv", {
+      statut: f.statut ? STATUT_API[f.statut] : undefined, search: f.search || undefined,
+    });
+  }
   window.openAffectForm = function openAffectForm(id) {
-    const r = RECEPTIONNISTES.find((x)=>x.id===id); if (!r) return;
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">Affecter — ${r.name}</p><p class="modal-sub">Sélectionnez un ou plusieurs professionnels</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      ${PROS.filter(p=>p.statut==="actif").map((p) => `<label style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;"><input type="checkbox" id="aff_${p.id}" ${r.pros.includes(p.id)?'checked':''} /> ${p.name} — ${p.role}</label>`).join("")}
-      <div class="field-hint">Dès l'affectation, le professionnel obtient automatiquement le droit de gérer cette réceptionniste (activer/désactiver, autorisations).</div>
+    const r = RECS_VIEW.find((x) => x.id === id) || RECEPTIONNISTES.find((x) => x.id === id);
+    if (!r) return;
+    const actifs = PROS.filter((p) => p.statut === "actif");
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Affecter — ${esc(r.name)}</p><p class="modal-sub">Sélectionnez un ou plusieurs professionnels</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      ${actifs.length ? actifs.map((p) => `<label style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;"><input type="checkbox" id="aff_${p.id}" ${r.pros.includes(p.id) ? "checked" : ""} /> ${esc(p.name)} — ${esc(p.role)}</label>`).join("") : `<div class="table-empty">Aucun professionnel actif</div>`}
+      <div class="field-hint">Les autorisations détaillées (agenda, rendez-vous, planning, paramètres) se règlent ensuite via le bouton « Autorisations ».</div>
       <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveAffect('${id}')">${iconCheck()} Enregistrer</button></div>
-    `;
-    openModal(html);
+    `);
   }
-  window.saveAffect = function saveAffect(id) {
-    const r = RECEPTIONNISTES.find((x)=>x.id===id); if (!r) return;
-    r.pros = PROS.filter(p=>p.statut==="actif").filter((p) => document.getElementById("aff_"+p.id).checked).map((p)=>p.id);
-    closeModal(); renderRecTable();
-    showToast(`Affectations mises à jour pour ${r.name}`);
+  window.saveAffect = async function saveAffect(id) {
+    const professionnelIds = PROS.filter((p) => p.statut === "actif").filter((p) => document.getElementById("aff_" + p.id)?.checked).map((p) => p.id);
+    try {
+      await adminApi.setAffectations(id, professionnelIds);
+      closeModal();
+      await loadAll();
+      await reloadRecs();
+      showToast("Affectations mises à jour");
+    } catch (e) { showError(e); }
+  }
+  window.openPermissions = function openPermissions(affectationId) {
+    let aff = null; let recName = "";
+    for (const r of RECEPTIONNISTES) {
+      const found = r.affectations.find((a) => a.affectationId === affectationId);
+      if (found) { aff = found; recName = r.name; break; }
+    }
+    if (!aff) { showToast("Affectation introuvable — actualisez la page"); return; }
+    const p = aff.permissions;
+    const champs = [
+      ["peutConsulterAgenda", "Consulter l'agenda"],
+      ["peutGererRdv", "Gérer les rendez-vous"],
+      ["peutGererPlanning", "Gérer le planning (disponibilités)"],
+      ["peutGererParametres", "Gérer les paramètres du professionnel"],
+    ];
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Autorisations</p><p class="modal-sub">${esc(recName)} · ${esc(aff.nom)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      ${champs.map(([key, label]) => `<label style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;"><input type="checkbox" id="perm_${key}" ${p[key] ? "checked" : ""} /> ${label}</label>`).join("")}
+      <div class="field-hint">Ces droits s'appliquent uniquement à ce professionnel : la même réceptionniste peut avoir des droits différents ailleurs.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="savePermissions('${affectationId}')">${iconCheck()} Enregistrer</button></div>
+    `);
+  }
+  window.savePermissions = async function savePermissions(affectationId) {
+    const permissions = {
+      peutConsulterAgenda: !!document.getElementById("perm_peutConsulterAgenda")?.checked,
+      peutGererRdv: !!document.getElementById("perm_peutGererRdv")?.checked,
+      peutGererPlanning: !!document.getElementById("perm_peutGererPlanning")?.checked,
+      peutGererParametres: !!document.getElementById("perm_peutGererParametres")?.checked,
+    };
+    try {
+      await adminApi.updatePermissions(affectationId, permissions);
+      closeModal();
+      await loadAll();
+      await reloadRecs();
+      showToast("Autorisations mises à jour");
+    } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     PAGE : UTILISATEURS (recherche globale)
-     ========================================================= */
   window.renderUsersPage = function renderUsersPage() {
     document.getElementById("page-users").innerHTML = `
       <div class="page-head"><div><h1 class="page-title">Utilisateurs</h1><p class="page-sub">Recherche globale — Professionnels, Réceptionnistes, Clients</p></div></div>
       <div class="filter-row">
-        <input type="text" id="userSearchInput" placeholder="Nom, e-mail…" oninput="renderUsersTable()" style="min-width:220px" />
-        <select id="userRoleFilter" onchange="renderUsersTable()"><option value="">Tous les rôles</option><option value="Professionnel">Professionnel</option><option value="Réceptionniste">Réceptionniste</option><option value="Client">Client</option></select>
+        <input type="text" id="userSearchInput" placeholder="Nom, e-mail, téléphone…" value="${esc(state.usersFilter.search)}" oninput="updateUsersFilter('search', this.value)" style="min-width:220px" />
+        <select id="userRoleFilter" onchange="updateUsersFilter('role', this.value)"><option value="">Tous les rôles</option>${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}" ${state.usersFilter.role === k ? "selected" : ""}>${v}</option>`).join("")}</select>
       </div>
-      <div class="card"><table class="data-table"><thead><tr><th>Nom</th><th>Rôle</th><th>E-mail</th><th>Statut</th><th>Créé le</th></tr></thead><tbody id="usersTableBody"></tbody></table></div>
+      <div class="card"><table class="data-table"><thead><tr><th>Nom</th><th>Rôle</th><th>E-mail</th><th>Téléphone</th><th>Statut</th><th>Créé le</th></tr></thead><tbody id="usersTableBody"></tbody></table></div>
     `;
-    renderUsersTable();
+    reloadUsers();
+  }
+  const reloadUsersDebounced = debounce(() => reloadUsers());
+  window.updateUsersFilter = function updateUsersFilter(k, v) { state.usersFilter[k] = v; reloadUsersDebounced(); }
+  window.reloadUsers = async function reloadUsers() {
+    try {
+      const f = state.usersFilter;
+      USERS_VIEW = await adminApi.listUsers({ role: f.role || undefined, search: f.search || undefined });
+      renderUsersTable();
+    } catch (e) { showError(e); }
   }
   window.renderUsersTable = function renderUsersTable() {
-    const q = (document.getElementById("userSearchInput")?.value || "").toLowerCase();
-    const roleF = document.getElementById("userRoleFilter")?.value || "";
-    let all = [
-      ...PROS.map((p) => ({ name:p.name, role:"Professionnel", email:p.email, statut:p.statut, createdAt:p.createdAt })),
-      ...RECEPTIONNISTES.map((r) => ({ name:r.name, role:"Réceptionniste", email:r.email, statut:r.statut, createdAt:r.createdAt })),
-      ...CLIENTS.map((c) => ({ name:c.name, role:"Client", email:c.email, statut:c.statut, createdAt:c.createdAt })),
-    ];
-    let rows = all.filter((u) => (!roleF||u.role===roleF) && (!q||u.name.toLowerCase().includes(q)||u.email.toLowerCase().includes(q)));
     const body = document.getElementById("usersTableBody");
-    if (!rows.length) { body.innerHTML = `<tr><td colspan="5"><div class="table-empty">Aucun utilisateur trouvé</div></td></tr>`; return; }
-    body.innerHTML = rows.map((u) => `<tr>
-      <td><div class="cell-client"><div class="avatar-sm" style="background:var(--ink-soft)">${initials(u.name)}</div><div class="cell-client-name">${u.name}</div></div></td>
-      <td>${u.role}</td><td>${u.email}</td>
-      <td><span class="status-pill ${STATUS_COMPTE[u.statut]?.cls||'st-termine'}">${STATUS_COMPTE[u.statut]?.label||'Actif'}</span></td>
-      <td>${fmtDateShort(u.createdAt)}</td>
-    </tr>`).join("");
+    if (!body) return;
+    if (!USERS_VIEW.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucun utilisateur trouvé</div></td></tr>`; return; }
+    body.innerHTML = USERS_VIEW.map((u) => {
+      const st = STATUT_UI[u.statutCompte] || "actif";
+      return `<tr>
+        <td><div class="cell-client"><div class="avatar-sm" style="background:${colorFor(u.id)}">${initials(u.nom)}</div><div class="cell-client-name">${esc(u.nom)}</div></div></td>
+        <td>${ROLE_LABELS[u.type] || u.type}</td><td>${esc(u.email || "—")}</td><td>${esc(u.telephone || "—")}</td>
+        <td><span class="status-pill ${STATUS_COMPTE[st].cls}">${STATUS_COMPTE[st].label}</span></td>
+        <td>${fmtDateShort(u.createdAt)}</td>
+      </tr>`;
+    }).join("");
   }
 
-  /* =========================================================
-     PAGE : CLIENTS (global)
-     ========================================================= */
   window.renderClientsPage = function renderClientsPage() {
     document.getElementById("page-clients").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Clients</h1><p class="page-sub">Vue globale, tous professionnels confondus</p></div><button class="btn btn-ghost btn-sm" onclick="exportMock('Liste des clients')">${iconPrinter()} Exporter</button></div>
-      <div class="filter-row"><input type="text" placeholder="Nom, e-mail, téléphone…" oninput="renderClientsTable(this.value)" style="min-width:240px" /></div>
-      <div class="card"><table class="data-table"><thead><tr><th>Client</th><th>Téléphone</th><th>Professionnel associé</th><th>Rendez-vous</th><th>Créé le</th></tr></thead><tbody id="clientsTableBody"></tbody></table></div>
+      <div class="page-head"><div><h1 class="page-title">Clients</h1><p class="page-sub">Vue globale, tous professionnels confondus</p></div><button class="btn btn-ghost btn-sm" onclick="exportCsv('clients','clients.csv',{ search: state.clientsFilter.search || undefined })">${iconPrinter()} Exporter</button></div>
+      <div class="filter-row"><input type="text" placeholder="Nom, e-mail, téléphone…" value="${esc(state.clientsFilter.search)}" oninput="updateClientsFilter(this.value)" style="min-width:240px" /></div>
+      <div class="card"><table class="data-table"><thead><tr><th>Client</th><th>Téléphone</th><th>Dernier professionnel</th><th>Rendez-vous</th><th>Dernier RDV</th><th>Créé le</th></tr></thead><tbody id="clientsTableBody"></tbody></table></div>
     `;
-    renderClientsTable("");
+    renderClientsTable();
   }
-  window.renderClientsTable = function renderClientsTable(q) {
-    q = (q||"").toLowerCase();
-    let rows = CLIENTS.filter((c) => !q || c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.phone.includes(q));
+  const reloadClientsDebounced = debounce(() => reloadClients());
+  window.updateClientsFilter = function updateClientsFilter(v) { state.clientsFilter.search = v; reloadClientsDebounced(); }
+  window.reloadClients = async function reloadClients() {
+    try { CLIENTS_VIEW = await adminApi.listClients(state.clientsFilter.search || undefined); renderClientsTable(); }
+    catch (e) { showError(e); }
+  }
+  window.renderClientsTable = function renderClientsTable() {
     const body = document.getElementById("clientsTableBody");
-    if (!rows.length) { body.innerHTML = `<tr><td colspan="5"><div class="table-empty">Aucun client trouvé</div></td></tr>`; return; }
-    body.innerHTML = rows.map((c) => `<tr>
-      <td><div class="cell-client"><div class="avatar-sm" style="background:var(--primary)">${initials(c.name)}</div><div><div class="cell-client-name">${c.name}</div><div class="cell-client-sub">${c.email}</div></div></div></td>
-      <td>${c.phone}</td><td>${c.pro}</td><td>${c.nbRdv}</td><td>${fmtDateShort(c.createdAt)}</td>
+    if (!body) return;
+    if (!CLIENTS_VIEW.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucun client trouvé</div></td></tr>`; return; }
+    body.innerHTML = CLIENTS_VIEW.map((c) => `<tr class="row-clickable" onclick="openClientFiche('${c.id}')">
+      <td><div class="cell-client"><div class="avatar-sm" style="background:${colorFor(c.id)}">${initials(c.prenom + " " + c.nom)}</div><div><div class="cell-client-name">${esc(c.prenom + " " + c.nom)}</div><div class="cell-client-sub">${esc(c.email || "—")}</div></div></div></td>
+      <td>${esc(c.telephone)}</td><td>${esc(c.professionnel || "—")}</td><td>${c.nbRdv}</td><td>${fmtDateShort(c.dernierRdv)}</td><td>${fmtDateShort(c.createdAt)}</td>
     </tr>`).join("");
   }
+  window.openClientFiche = async function openClientFiche(id) {
+    try {
+      const c = await adminApi.getClient(id);
+      openModal(`
+        <div class="modal-head"><div style="display:flex;align-items:center;gap:12px;"><div class="avatar-sm" style="width:42px;height:42px;font-size:15px;background:${colorFor(c.id)}">${initials(c.prenom + " " + c.nom)}</div><div><p class="modal-title">${esc(c.prenom + " " + c.nom)}</p><p class="modal-sub">${c.nbRdv} rendez-vous</p></div></div><button class="modal-close" onclick="closeModal()">×</button></div>
+        <div class="detail-grid">
+          <div><div class="detail-item-label">Téléphone</div><div class="detail-item-value">${esc(c.telephone)}</div></div>
+          <div><div class="detail-item-label">E-mail</div><div class="detail-item-value">${esc(c.email || "—")}</div></div>
+          <div><div class="detail-item-label">Date de naissance</div><div class="detail-item-value">${fmtDateShort(c.dateNaissance)}</div></div>
+          <div><div class="detail-item-label">Adresse</div><div class="detail-item-value">${esc(c.adresse || "—")}</div></div>
+          <div><div class="detail-item-label">Fiche créée le</div><div class="detail-item-value">${fmtDateShort(c.createdAt)}</div></div>
+        </div>
+        <div class="detail-item-label" style="margin-bottom:8px;">Historique des rendez-vous</div>
+        <div>${c.rendezVous.length ? c.rendezVous.map((r) => `<div class="dash-list-row" style="padding:8px 0;"><div style="flex:1"><div class="dash-list-name" style="font-size:12.5px;">${esc(r.service.nom)}</div><div class="dash-list-sub">${esc(r.professionnel.nom)} · ${fmtDateTime(r.dateDebut)}</div></div><span class="status-pill ${ETAT_LABELS[r.statut].cls}">${ETAT_LABELS[r.statut].label}</span></div>`).join("") : `<div class="table-empty">Aucun rendez-vous</div>`}</div>
+        <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" onclick="openEditClient('${c.id}')">${iconEdit()} Modifier la fiche</button>
+            ${c.nbRdv === 0 ? `<button class="btn btn-danger-ghost btn-sm" onclick="askDeleteClient('${c.id}','${escArg(c.prenom + " " + c.nom)}')">${iconTrash()} Supprimer</button>` : ""}
+          </div>
+          <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
+        </div>
+      `, true);
+    } catch (e) { showError(e); }
+  }
+  window.openEditClient = async function openEditClient(id) {
+    try {
+      const c = await adminApi.getClient(id);
+      openModal(`
+        <div class="modal-head"><div><p class="modal-title">Modifier la fiche client</p><p class="modal-sub">${esc(c.prenom + " " + c.nom)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+        <div class="field-2col">
+          <div class="field-row"><label>Prénom *</label><input type="text" id="ecPrenom" value="${esc(c.prenom)}" /></div>
+          <div class="field-row"><label>Nom *</label><input type="text" id="ecNom" value="${esc(c.nom)}" /></div>
+        </div>
+        <div class="field-2col">
+          <div class="field-row"><label>Téléphone *</label><input type="text" id="ecTel" value="${esc(c.telephone)}" /></div>
+          <div class="field-row"><label>E-mail</label><input type="email" id="ecEmail" value="${esc(c.email || "")}" /></div>
+        </div>
+        <div class="field-2col">
+          <div class="field-row"><label>Date de naissance</label><input type="date" id="ecNaiss" value="${toDay(c.dateNaissance)}" /></div>
+          <div class="field-row"><label>Adresse</label><input type="text" id="ecAdr" value="${esc(c.adresse || "")}" /></div>
+        </div>
+        <div class="field-hint">Le téléphone identifie le client de façon unique : un numéro déjà utilisé sera refusé.</div>
+        <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveEditClient('${id}')">${iconCheck()} Enregistrer</button></div>
+      `);
+    } catch (e) { showError(e); }
+  }
+  window.saveEditClient = async function saveEditClient(id) {
+    const payload = { nom: val("ecNom"), prenom: val("ecPrenom"), telephone: val("ecTel"), adresse: val("ecAdr") };
+    if (!payload.nom || !payload.prenom || payload.telephone.length < 6) { showToast("Nom, prénom et téléphone sont obligatoires"); return; }
+    if (val("ecEmail")) payload.email = val("ecEmail");
+    if (val("ecNaiss")) payload.dateNaissance = new Date(val("ecNaiss") + "T00:00:00").toISOString();
+    try {
+      await adminApi.updateClient(id, payload);
+      closeModal();
+      await reloadClients();
+      showToast("Fiche client mise à jour");
+    } catch (e) { showError(e); }
+  }
+  window.askDeleteClient = function askDeleteClient(id, name) {
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Supprimer la fiche client</p><p class="modal-sub">${esc(name)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-hint" style="margin-bottom:14px;">Action définitive. Elle est refusée si le client a des rendez-vous : l'historique ne doit jamais être perdu.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-danger-ghost" onclick="confirmDeleteClient('${id}')">${iconTrash()} Supprimer définitivement</button></div>
+    `);
+  }
+  window.confirmDeleteClient = async function confirmDeleteClient(id) {
+    try {
+      await adminApi.deleteClient(id);
+      closeModal();
+      await loadAll();
+      await reloadClients();
+      renderPage(state.page);
+      showToast("Fiche client supprimée");
+    } catch (e) { showError(e); }
+  }
 
-  /* =========================================================
-     PAGE : RÉSERVATIONS (global)
-     ========================================================= */
-  const ETAT_LABELS = { reserve:{label:"Réservé",cls:"st-reserve"}, termine:{label:"Terminé",cls:"st-termine"}, annule:{label:"Annulé",cls:"st-annule"} };
   window.renderRdvPage = function renderRdvPage() {
+    const f = state.rdvFilter;
     document.getElementById("page-rdv").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Réservations</h1><p class="page-sub">Vue globale, tous professionnels confondus</p></div><button class="btn btn-ghost btn-sm" onclick="exportMock('Liste des réservations')">${iconPrinter()} Exporter</button></div>
+      <div class="page-head"><div><h1 class="page-title">Réservations</h1><p class="page-sub">Vue globale, tous professionnels confondus</p></div><button class="btn btn-ghost btn-sm" onclick="exportRdvCsv()">${iconPrinter()} Exporter</button></div>
       <div class="filter-row">
-        <select onchange="updateRdvFilter('etat', this.value)"><option value="">Tous les états</option>${Object.entries(ETAT_LABELS).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join("")}</select>
-        <select onchange="updateRdvFilter('pro', this.value)"><option value="">Tous les professionnels</option>${PROS.map((p)=>`<option value="${p.name}">${p.name}</option>`).join("")}</select>
+        <input type="text" placeholder="Client, service, professionnel…" value="${esc(f.search)}" oninput="updateRdvFilter('search', this.value)" style="min-width:220px" />
+        <select onchange="updateRdvFilter('statut', this.value)"><option value="">Tous les états</option>${Object.entries(ETAT_LABELS).map(([k, v]) => `<option value="${k}" ${f.statut === k ? "selected" : ""}>${v.label}</option>`).join("")}</select>
+        <select onchange="updateRdvFilter('professionnelId', this.value)"><option value="">Tous les professionnels</option>${PROS.map((p) => `<option value="${p.id}" ${f.professionnelId === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
+        <input type="date" value="${f.from}" onchange="updateRdvFilter('from', this.value)" title="À partir du" />
+        <input type="date" value="${f.to}" onchange="updateRdvFilter('to', this.value)" title="Jusqu'au" />
+        <button class="btn btn-ghost btn-sm" onclick="resetRdvFilter()">Réinitialiser</button>
       </div>
       <div class="card"><table class="data-table"><thead><tr><th>Client</th><th>Professionnel</th><th>Service</th><th>Date</th><th>Heure</th><th>État</th><th></th></tr></thead><tbody id="rdvTableBody"></tbody></table></div>
+      <div id="rdvFooter" style="padding:12px 2px;font-size:12px;color:var(--ink-soft);"></div>
     `;
     renderRdvTable();
   }
-  window.updateRdvFilter = function updateRdvFilter(k,v) { state.rdvFilter[k]=v; renderRdvTable(); }
-  window.renderRdvTable = function renderRdvTable() {
-    const f = state.rdvFilter;
-    let rows = RESERVATIONS.filter((r) => (!f.etat||r.etat===f.etat) && (!f.pro||r.pro===f.pro)).sort((a,b)=>(b.date+b.heure).localeCompare(a.date+a.heure));
-    const body = document.getElementById("rdvTableBody");
-    if (!rows.length) { body.innerHTML = `<tr><td colspan="7"><div class="table-empty">Aucune réservation ne correspond à ces filtres</div></td></tr>`; return; }
-    body.innerHTML = rows.map((r) => `<tr class="row-clickable" onclick='openRdvFiche(${JSON.stringify(r.id)})'>
-      <td>${r.client}</td><td>${r.pro}</td><td>${r.service}</td><td>${fmtDateShort(r.date)}</td><td>${r.heure}</td>
-      <td><span class="status-pill ${ETAT_LABELS[r.etat].cls}">${ETAT_LABELS[r.etat].label}</span></td>
-      <td><div class="row-actions" onclick="event.stopPropagation()"><button class="icon-btn">${iconEye()}</button></div></td>
-    </tr>`).join("");
+  const reloadRdvDebounced = debounce(() => reloadRdv());
+  window.updateRdvFilter = function updateRdvFilter(k, v) { state.rdvFilter[k] = v; state.rdvFilter.skip = 0; reloadRdvDebounced(); }
+  window.resetRdvFilter = function resetRdvFilter() { state.rdvFilter = { statut: "", professionnelId: "", from: "", to: "", search: "", take: 100, skip: 0 }; renderRdvPage(); reloadRdv(); }
+  window.reloadRdv = async function reloadRdv() {
+    try {
+      state.rdvFilter.skip = 0;
+      const f = state.rdvFilter;
+      const data = await adminApi.listRdv({
+        statut: f.statut || undefined, professionnelId: f.professionnelId || undefined,
+        from: f.from || undefined, to: f.to || undefined, search: f.search || undefined,
+        take: f.take, skip: f.skip,
+      });
+      RESERVATIONS = (data.items || []).map(mapRdv);
+      RDV_TOTAL = data.total;
+      renderRdvTable();
+    } catch (e) { showError(e); }
   }
-  window.openRdvFiche = function openRdvFiche(id) {
-    const r = RESERVATIONS.find((x) => x.id===id); if (!r) return;
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">${r.client}</p><p class="modal-sub">${r.service} · ${r.pro}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="detail-grid">
-        <div><div class="detail-item-label">Date</div><div class="detail-item-value">${fmtDateShort(r.date)}</div></div>
-        <div><div class="detail-item-label">Heure</div><div class="detail-item-value">${r.heure}</div></div>
-        <div><div class="detail-item-label">État</div><div class="detail-item-value"><span class="status-pill ${ETAT_LABELS[r.etat].cls}">${ETAT_LABELS[r.etat].label}</span></div></div>
-        <div><div class="detail-item-label">Créée le</div><div class="detail-item-value">${fmtDateShort(r.createdAt)}</div></div>
-        <div><div class="detail-item-label">Dernière modification</div><div class="detail-item-value">${fmtDateShort(r.modifiedAt)}</div></div>
-        ${r.motif ? `<div><div class="detail-item-label">Motif d'annulation</div><div class="detail-item-value">${r.motif}</div></div>` : ""}
+  window.renderRdvTable = function renderRdvTable() {
+    const body = document.getElementById("rdvTableBody");
+    if (!body) return;
+    if (!RESERVATIONS.length) { body.innerHTML = `<tr><td colspan="7"><div class="table-empty">Aucune réservation ne correspond à ces filtres</div></td></tr>`; }
+    else {
+      body.innerHTML = RESERVATIONS.map((r) => `<tr class="row-clickable" onclick="openRdvFiche('${r.id}')">
+        <td>${esc(r.client)}</td><td>${esc(r.pro)}</td><td>${esc(r.service)}</td><td>${fmtDateShort(r.date)}</td><td>${r.heure}</td>
+        <td><span class="status-pill ${ETAT_LABELS[r.etat].cls}">${ETAT_LABELS[r.etat].label}</span></td>
+        <td><div class="row-actions" onclick="event.stopPropagation()"><button class="icon-btn" title="Détail" onclick="openRdvFiche('${r.id}')">${iconEye()}</button>${r.etat === "RESERVE" ? `<button class="icon-btn" title="Déplacer" onclick="openDeplacerRdv('${r.id}')">${iconClock()}</button>` : ""}${["RESERVE", "CLIENT_ARRIVE", "EN_COURS"].includes(r.etat) ? `<button class="icon-btn" title="Annuler" onclick="openAnnulerRdv('${r.id}')">${iconX()}</button>` : ""}</div></td>
+      </tr>`).join("");
+    }
+    const footer = document.getElementById("rdvFooter");
+    if (footer) {
+      const affiches = RESERVATIONS.length;
+      footer.innerHTML = `${affiches} réservation(s) affichée(s) sur ${RDV_TOTAL}
+        ${affiches < RDV_TOTAL ? `<button class="btn btn-ghost btn-sm" style="margin-left:10px" onclick="loadMoreRdv()">Charger la suite</button>` : ""}`;
+    }
+  }
+  window.loadMoreRdv = async function loadMoreRdv() {
+    try {
+      const f = state.rdvFilter;
+      const data = await adminApi.listRdv({
+        statut: f.statut || undefined, professionnelId: f.professionnelId || undefined,
+        from: f.from || undefined, to: f.to || undefined, search: f.search || undefined,
+        take: f.take, skip: f.skip + f.take,
+      });
+      state.rdvFilter.skip += f.take;
+      RESERVATIONS = RESERVATIONS.concat((data.items || []).map(mapRdv));
+      RDV_TOTAL = data.total;
+      renderRdvTable();
+    } catch (e) { showError(e); }
+  }
+  window.openRdvFiche = async function openRdvFiche(id) {
+    try {
+      const r = await adminApi.getRdv(id);
+      openModal(`
+        <div class="modal-head"><div><p class="modal-title">${esc(r.client.prenom + " " + r.client.nom)}</p><p class="modal-sub">${esc(r.service.nom)} · ${esc(r.professionnel.nom)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+        <div class="detail-grid">
+          <div><div class="detail-item-label">Date</div><div class="detail-item-value">${fmtDateShort(r.dateDebut)}</div></div>
+          <div><div class="detail-item-label">Horaire</div><div class="detail-item-value">${toHeure(r.dateDebut)} – ${toHeure(r.dateFin)}</div></div>
+          <div><div class="detail-item-label">État</div><div class="detail-item-value"><span class="status-pill ${ETAT_LABELS[r.statut].cls}">${ETAT_LABELS[r.statut].label}</span></div></div>
+          <div><div class="detail-item-label">Origine</div><div class="detail-item-value">${esc(r.origine)}</div></div>
+          <div><div class="detail-item-label">Reports effectués</div><div class="detail-item-value">${r.nombreChangements ?? 0}${PLATFORM.maxChangementsRdv !== undefined ? ` / ${PLATFORM.maxChangementsRdv}` : ""}</div></div>
+          <div><div class="detail-item-label">Téléphone client</div><div class="detail-item-value">${esc(r.client.telephone)}</div></div>
+          <div><div class="detail-item-label">Créée le</div><div class="detail-item-value">${fmtDateTime(r.createdAt)}</div></div>
+          <div><div class="detail-item-label">Dernière modification</div><div class="detail-item-value">${fmtDateTime(r.updatedAt)}</div></div>
+          ${r.motifAnnulation ? `<div><div class="detail-item-label">Motif d'annulation</div><div class="detail-item-value">${esc(r.motifAnnulation)}</div></div>` : ""}
+          ${r.remarque ? `<div><div class="detail-item-label">Remarque</div><div class="detail-item-value">${esc(r.remarque)}</div></div>` : ""}
+        </div>
+        ${r.reponsesChamps?.length ? `<div class="detail-item-label" style="margin-bottom:8px;">Informations complémentaires</div><div style="margin-bottom:16px;">${r.reponsesChamps.map((rc) => `<div class="dash-list-row" style="padding:6px 0;"><div style="flex:1"><div class="dash-list-sub">${esc(rc.champ.label)}</div><div class="dash-list-name" style="font-size:12.5px;">${esc(rc.valeur)}</div></div></div>`).join("")}</div>` : ""}
+        <div class="detail-item-label" style="margin-bottom:8px;">Historique des statuts</div>
+        <div>${r.historique?.length ? r.historique.map((h) => `<div class="dash-list-row" style="padding:6px 0;"><div style="flex:1"><div class="dash-list-name" style="font-size:12.5px;">${h.ancienStatut ? ETAT_LABELS[h.ancienStatut].label + " → " : ""}${ETAT_LABELS[h.nouveauStatut].label}</div><div class="dash-list-sub">${fmtDateTime(h.createdAt)}</div></div></div>`).join("") : `<div class="table-empty">Aucun changement enregistré</div>`}</div>
+        <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${r.statut === "RESERVE" ? `<button class="btn btn-ghost btn-sm" onclick="openDeplacerRdv('${r.id}','${toDay(r.dateDebut)}','${toHeure(r.dateDebut)}')">${iconClock()} Déplacer</button>` : ""}
+            ${["RESERVE", "CLIENT_ARRIVE", "EN_COURS"].includes(r.statut) ? `<button class="btn btn-danger-ghost btn-sm" onclick="openAnnulerRdv('${r.id}')">${iconX()} Annuler le rendez-vous</button>` : ""}
+          </div>
+          <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
+        </div>
+      `, true);
+    } catch (e) { showError(e); }
+  }
+  window.exportRdvCsv = function exportRdvCsv() {
+    const f = state.rdvFilter;
+    exportCsv("rendez-vous", "rendez-vous.csv", {
+      statut: f.statut || undefined, professionnelId: f.professionnelId || undefined,
+      from: f.from || undefined, to: f.to || undefined, search: f.search || undefined,
+    });
+  }
+  window.openDeplacerRdv = function openDeplacerRdv(id, dateIso, heure) {
+    const rdv = RESERVATIONS.find((r) => r.id === id);
+    const date = dateIso || rdv?.date || todayISO();
+    const h = heure || rdv?.heure || "09:00";
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Déplacer le rendez-vous</p><p class="modal-sub">${rdv ? esc(rdv.client + " · " + rdv.service) : "Nouveau créneau"}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-2col">
+        <div class="field-row"><label>Nouvelle date</label><input type="date" id="dpDate" value="${date}" /></div>
+        <div class="field-row"><label>Nouvelle heure</label><input type="time" id="dpHeure" value="${h}" /></div>
       </div>
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Fermer</button></div>
-    `;
-    openModal(html);
+      <div class="field-hint">La durée du service est conservée. Le créneau est revérifié côté serveur : s'il est déjà occupé, le déplacement est refusé.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="confirmDeplacerRdv('${id}')">${iconCheck()} Déplacer</button></div>
+    `);
+  }
+  window.confirmDeplacerRdv = async function confirmDeplacerRdv(id) {
+    const date = val("dpDate"); const heure = val("dpHeure");
+    if (!date || !heure) { showToast("Indiquez une date et une heure"); return; }
+    try {
+      await adminApi.deplacerRdv(id, new Date(`${date}T${heure}:00`).toISOString());
+      closeModal();
+      await Promise.all([loadAll(), reloadRdv()]);
+      renderPage(state.page);
+      showToast("Rendez-vous déplacé");
+    } catch (e) { showError(e); }
+  }
+  window.openAnnulerRdv = function openAnnulerRdv(id) {
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Annulation administrative</p><p class="modal-sub">Le professionnel et son équipe sont notifiés</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-row"><label>Motif de l'annulation</label><textarea id="annulMotif" rows="2" placeholder="Ex. demande du client, indisponibilité exceptionnelle…"></textarea></div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Retour</button><button class="btn btn-danger-ghost" onclick="confirmAnnulerRdv('${id}')">${iconX()} Confirmer l'annulation</button></div>
+    `);
+  }
+  window.confirmAnnulerRdv = async function confirmAnnulerRdv(id) {
+    try {
+      await adminApi.annulerRdv(id, val("annulMotif") || undefined);
+      closeModal();
+      await Promise.all([loadAll(), reloadRdv()]);
+      renderPage(state.page);
+      showToast("Rendez-vous annulé");
+    } catch (e) { showError(e); }
   }
 
-  /* =========================================================
-     PAGE : SERVICES (global)
-     ========================================================= */
   window.renderServicesPage = function renderServicesPage() {
     document.getElementById("page-services").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Services</h1><p class="page-sub">Consultation des services créés par les professionnels</p></div></div>
-      <div class="filter-row"><input type="text" placeholder="Rechercher un service…" oninput="renderServicesTable(this.value)" style="min-width:220px" /></div>
-      <div class="card"><table class="data-table"><thead><tr><th>Service</th><th>Professionnel</th><th>Statut</th><th>Rendez-vous</th><th></th></tr></thead><tbody id="servicesTableBody"></tbody></table></div>
+      <div class="page-head"><div><h1 class="page-title">Services</h1><p class="page-sub">Consultation et activation des services créés par les professionnels</p></div><button class="btn btn-ghost btn-sm" onclick="exportServicesCsv()">${iconPrinter()} Exporter</button></div>
+      <div class="filter-row">
+        <input type="text" placeholder="Rechercher un service, un professionnel…" value="${esc(state.servicesFilter.search)}" oninput="updateServicesFilter('search', this.value)" style="min-width:240px" />
+        <select onchange="updateServicesFilter('actif', this.value)"><option value="">Publiés et non publiés</option><option value="true" ${state.servicesFilter.actif === "true" ? "selected" : ""}>Publiés</option><option value="false" ${state.servicesFilter.actif === "false" ? "selected" : ""}>Non publiés</option></select>
+        <select onchange="updateServicesFilter('statut', this.value)"><option value="">Toutes les disponibilités</option>${Object.entries(STATUT_SERVICE).map(([k, v]) => `<option value="${k}" ${state.servicesFilter.statut === k ? "selected" : ""}>${v.label}</option>`).join("")}</select>
+      </div>
+      <div class="card"><table class="data-table"><thead><tr><th>Service</th><th>Professionnel</th><th>Durée</th><th>Prix</th><th>Publication</th><th>Disponibilité</th><th>Rendez-vous</th><th></th></tr></thead><tbody id="servicesTableBody"></tbody></table></div>
     `;
-    renderServicesTable("");
+    renderServicesTable();
   }
-  window.renderServicesTable = function renderServicesTable(q) {
-    q = (q||"").toLowerCase();
-    let rows = SERVICES.filter((s) => !q || s.name.toLowerCase().includes(q) || s.pro.toLowerCase().includes(q));
+  const reloadServicesDebounced = debounce(() => reloadServices());
+  window.updateServicesFilter = function updateServicesFilter(k, v) { state.servicesFilter[k] = v; reloadServicesDebounced(); }
+  window.reloadServices = async function reloadServices() {
+    try {
+      const f = state.servicesFilter;
+      SERVICES_VIEW = await adminApi.listServices({ search: f.search || undefined, actif: f.actif || undefined, statut: f.statut || undefined });
+      renderServicesTable();
+    } catch (e) { showError(e); }
+  }
+  window.renderServicesTable = function renderServicesTable() {
     const body = document.getElementById("servicesTableBody");
-    if (!rows.length) { body.innerHTML = `<tr><td colspan="5"><div class="table-empty">Aucun service trouvé</div></td></tr>`; return; }
-    body.innerHTML = rows.map((s) => `<tr>
-      <td>${s.name}</td><td>${s.pro}</td>
-      <td><span class="status-pill ${s.statut==='actif'?'st-termine':'st-absent'}">${s.statut==='actif'?'Actif':'Désactivé'}</span></td>
+    if (!body) return;
+    if (!SERVICES_VIEW.length) { body.innerHTML = `<tr><td colspan="8"><div class="table-empty">Aucun service trouvé</div></td></tr>`; return; }
+    body.innerHTML = SERVICES_VIEW.map((s) => {
+      const dispo = STATUT_SERVICE[s.statut] || STATUT_SERVICE.DISPONIBLE;
+      return `<tr>
+      <td><div class="cell-client-name">${esc(s.nom)}</div><div class="cell-client-sub">${esc(s.description || "")}</div></td>
+      <td>${esc(s.professionnel)}</td><td>${s.dureeMinutes} min</td><td>${fmtPrix(s.prix)}</td>
+      <td><span class="status-pill ${s.actif ? "st-termine" : "st-absent"}">${s.actif ? "Publié" : "Non publié"}</span></td>
+      <td><select onchange="setServiceDisponibilite('${s.id}', this.value)" title="Disponibilité affichée au client" style="font-size:11.5px;padding:4px 6px;">${Object.entries(STATUT_SERVICE).map(([k, v]) => `<option value="${k}" ${s.statut === k ? "selected" : ""}>${v.label}</option>`).join("")}</select></td>
       <td>${s.nbRdv}</td>
-      <td><div class="row-actions"><button class="icon-btn" title="${s.statut==='actif'?'Désactiver':'Activer'}" onclick="toggleServiceStatut('${s.id}')">${s.statut==='actif'?iconX():iconCheck()}</button></div></td>
-    </tr>`).join("");
+      <td><div class="row-actions">
+        <button class="icon-btn" title="${s.actif ? "Dépublier" : "Publier"}" onclick="toggleServiceStatut('${s.id}', ${s.actif ? "false" : "true"})">${s.actif ? iconX() : iconCheck()}</button>
+        ${s.nbRdv === 0 ? `<button class="icon-btn" title="Supprimer" onclick="askDeleteService('${s.id}','${escArg(s.nom)}')">${iconTrash()}</button>` : ""}
+      </div></td>
+    </tr>`;
+    }).join("");
   }
-  window.toggleServiceStatut = function toggleServiceStatut(id) { const s=SERVICES.find(x=>x.id===id); if(!s) return; s.statut = s.statut==="actif"?"désactivé":"actif"; renderServicesTable(""); showToast(`Service « ${s.name} » ${s.statut==='actif'?'activé':'désactivé'}`); }
+  window.exportServicesCsv = function exportServicesCsv() {
+    const f = state.servicesFilter;
+    exportCsv("services", "services.csv", { search: f.search || undefined, actif: f.actif || undefined, statut: f.statut || undefined });
+  }
+  window.setServiceDisponibilite = async function setServiceDisponibilite(id, statut) {
+    try {
+      await adminApi.setServiceStatut(id, statut);
+      await reloadServices();
+      showToast(`Disponibilité : <b>${STATUT_SERVICE[statut].label}</b>`);
+    } catch (e) { showError(e); }
+  }
+  window.askDeleteService = function askDeleteService(id, nom) {
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Supprimer le service</p><p class="modal-sub">${esc(nom)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-hint" style="margin-bottom:14px;">Action définitive, refusée dès qu'un rendez-vous utilise ce service. Dans ce cas, dépubliez-le plutôt.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-danger-ghost" onclick="confirmDeleteService('${id}')">${iconTrash()} Supprimer définitivement</button></div>
+    `);
+  }
+  window.confirmDeleteService = async function confirmDeleteService(id) {
+    try {
+      await adminApi.deleteService(id);
+      closeModal();
+      await loadAll();
+      await reloadServices();
+      renderPage(state.page);
+      showToast("Service supprimé");
+    } catch (e) { showError(e); }
+  }
+  window.toggleServiceStatut = async function toggleServiceStatut(id, actif) {
+    try {
+      await adminApi.setServiceActif(id, actif);
+      await reloadServices();
+      showToast(`Service ${actif ? "activé" : "désactivé"}`);
+    } catch (e) { showError(e); }
+  }
 
-  /* =========================================================
-     PAGE : AGENDAS (vue admin — consultation seule)
-     ========================================================= */
   window.renderAgendasPage = function renderAgendasPage() {
     document.getElementById("page-agendas").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Agendas</h1><p class="page-sub">Consultation des disponibilités et créneaux par professionnel</p></div></div>
-      <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">
-        ${PROS.filter(p=>p.statut==="actif").map((p) => {
-          const rdvCount = RESERVATIONS.filter((r) => r.pro===p.name && r.etat==="reserve").length;
-          return `<div class="card" style="padding:16px;">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div class="avatar-sm" style="background:${p.color}">${initials(p.name)}</div><div><div style="font-weight:800;font-size:13.5px;">${p.name}</div><div style="font-size:11.5px;color:var(--ink-soft)">${p.role}</div></div></div>
-            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:10px;"><span>Créneaux réservés</span><b style="color:var(--ink)">${rdvCount}</b></div>
-            <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;" onclick="showToast('Agenda détaillé de ${p.name} — consultation seule pour l\\'Admin')">${iconEye()} Consulter l'agenda</button>
-          </div>`;
-        }).join("")}
+      <div class="page-head"><div><h1 class="page-title">Agendas</h1><p class="page-sub">Consultation des disponibilités et des créneaux par professionnel</p></div><button class="btn btn-ghost btn-sm" onclick="refreshAll()">${iconRefresh()} Actualiser</button></div>
+      <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
+        ${AGENDAS.length ? AGENDAS.map((a) => `<div class="card" style="padding:16px;background:linear-gradient(180deg,#FFFFFF 0%,#FBFAFF 100%);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div class="avatar-sm" style="background:${colorFor(a.professionnelId)}">${initials(a.nom)}</div><div><div style="font-weight:800;font-size:13.5px;">${esc(a.nom)}</div><div style="font-size:11.5px;color:var(--ink-soft)">${esc(a.specialite || "—")}</div></div></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:6px;"><span>Rendez-vous à venir</span><b style="color:var(--primary-dark)">${a.nbRdvAVenir}</b></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);margin-bottom:6px;"><span>Jours travaillés</span><b style="color:var(--ink)">${a.joursTravailles.map((j) => JOURS[j].slice(0, 3)).join(", ") || "—"}</b></div>
+          <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">${a.prochainRdv ? `Prochain : ${esc(a.prochainRdv.client)} — ${fmtDateTime(a.prochainRdv.dateDebut)}` : "Aucun rendez-vous à venir"}</div>
+          ${a.indisponibilites.length ? `<div style="margin-bottom:10px;">${a.indisponibilites.map((i) => `<span class="status-pill st-absent" style="margin:2px 2px 2px 0;">${fmtDateShort(i.dateDebut)} → ${fmtDateShort(i.dateFin)}</span>`).join("")}</div>` : ""}
+          <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;" onclick="openAgenda('${a.professionnelId}')">${iconEye()} Consulter l'agenda</button>
+        </div>`).join("") : `<div class="card"><div class="table-empty">Aucun professionnel actif</div></div>`}
       </div>
     `;
   }
+  window.openAgenda = async function openAgenda(professionnelId, dateIso) {
+    const date = dateIso || todayISO();
+    try {
+      const a = await adminApi.getAgenda(professionnelId, date);
+      const creneaux = a.rendezVous.map((r) => `<div class="dash-list-row" style="padding:8px 0;">
+        <div style="min-width:96px;font-weight:700;font-size:12.5px;">${toHeure(r.dateDebut)} – ${toHeure(r.dateFin)}</div>
+        <div style="flex:1"><div class="dash-list-name" style="font-size:12.5px;">${esc(r.client.prenom + " " + r.client.nom)}</div><div class="dash-list-sub">${esc(r.service.nom)} · ${esc(r.client.telephone)}</div></div>
+        <span class="status-pill ${ETAT_LABELS[r.statut].cls}">${ETAT_LABELS[r.statut].label}</span></div>`).join("");
+      openModal(`
+        <div class="modal-head"><div><p class="modal-title">Agenda — ${esc(a.professionnel.nom)}</p><p class="modal-sub">Consultation seule · ${fmtDateShort(a.date)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+          <button class="btn btn-ghost btn-sm" onclick="openAgenda('${professionnelId}','${isoPlusDays(date, -1)}')">${iconChevronLeft()} Jour précédent</button>
+          <input type="date" value="${a.date}" onchange="openAgenda('${professionnelId}', this.value)" />
+          <button class="btn btn-ghost btn-sm" onclick="openAgenda('${professionnelId}','${isoPlusDays(date, 1)}')">Jour suivant ${iconChevronRight()}</button>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openAgenda('${professionnelId}','${todayISO()}')">Aujourd'hui</button>
+        </div>
+        <div class="detail-item-label" style="margin-bottom:8px;">Horaires de travail — ${JOURS[a.jourSemaine]}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">${a.disponibilites.length ? a.disponibilites.map((d) => `<span class="status-pill st-reserve">${d.heureDebut} – ${d.heureFin}</span>`).join("") : `<span class="dash-list-sub">Jour non travaillé</span>`}</div>
+        ${a.indisponibilites.length ? `<div class="detail-item-label" style="margin-bottom:8px;">Indisponibilités</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">${a.indisponibilites.map((i) => `<span class="status-pill st-absent">${esc(i.motif || i.type)} : ${fmtDateTime(i.dateDebut)} → ${fmtDateTime(i.dateFin)}</span>`).join("")}</div>` : ""}
+        <div class="detail-item-label" style="margin-bottom:8px;">Rendez-vous de la journée (${a.rendezVous.length})</div>
+        <div>${creneaux || `<div class="table-empty">Aucun rendez-vous ce jour</div>`}</div>
+        <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Fermer</button></div>
+      `, true);
+    } catch (e) { showError(e); }
+  }
 
-  /* =========================================================
-     PAGE : PARAMÈTRES GÉNÉRAUX
-     ========================================================= */
+  window.renderAbsencesPage = function renderAbsencesPage() {
+    const f = state.indispoFilter;
+    document.getElementById("page-absences").innerHTML = `
+      <div class="page-head">
+        <div><h1 class="page-title">Absences</h1><p class="page-sub">Indisponibilités déclarées par les professionnels, tous espaces confondus</p></div>
+        <button class="btn btn-ghost btn-sm" onclick="exportAbsencesCsv()">${iconPrinter()} Exporter</button>
+      </div>
+      <div class="filter-row">
+        <select onchange="updateIndispoFilter('professionnelId', this.value)"><option value="">Tous les professionnels</option>${PROS.map((pr) => `<option value="${pr.id}" ${f.professionnelId === pr.id ? "selected" : ""}>${esc(pr.name)}</option>`).join("")}</select>
+        <select onchange="updateIndispoFilter('type', this.value)"><option value="">Tous les types</option>${Object.entries(TYPE_INDISPO).map(([k, v]) => `<option value="${k}" ${f.type === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+        <input type="date" value="${f.from}" onchange="updateIndispoFilter('from', this.value)" title="À partir du" />
+        <input type="date" value="${f.to}" onchange="updateIndispoFilter('to', this.value)" title="Jusqu'au" />
+        <button class="btn btn-ghost btn-sm" onclick="resetIndispoFilter()">Réinitialiser</button>
+      </div>
+      <div class="field-hint" style="margin-bottom:12px;">Sans filtre de date, seules les absences en cours ou à venir sont affichées.</div>
+      <div class="card"><table class="data-table"><thead><tr><th>Professionnel</th><th>Type</th><th>Du</th><th>Au</th><th>Motif</th><th>Clients prévenus</th><th></th></tr></thead><tbody id="absencesTableBody"></tbody></table></div>
+    `;
+    reloadIndispos();
+  }
+  window.updateIndispoFilter = function updateIndispoFilter(k, v) { state.indispoFilter[k] = v; reloadIndispos(); }
+  window.resetIndispoFilter = function resetIndispoFilter() {
+    state.indispoFilter = { professionnelId: "", type: "", from: "", to: "" };
+    renderAbsencesPage();
+  }
+  window.reloadIndispos = async function reloadIndispos() {
+    try {
+      const f = state.indispoFilter;
+      INDISPOS = await adminApi.listIndisponibilites({
+        professionnelId: f.professionnelId || undefined, type: f.type || undefined,
+        from: f.from || undefined, to: f.to || undefined,
+      });
+      renderAbsencesTable();
+    } catch (e) { showError(e); }
+  }
+  window.renderAbsencesTable = function renderAbsencesTable() {
+    const body = document.getElementById("absencesTableBody");
+    if (!body) return;
+    if (!INDISPOS.length) { body.innerHTML = `<tr><td colspan="7"><div class="table-empty">Aucune absence sur cette période</div></td></tr>`; return; }
+    const now = Date.now();
+    body.innerHTML = INDISPOS.map((i) => {
+      const enCours = new Date(i.dateDebut).getTime() <= now && new Date(i.dateFin).getTime() >= now;
+      return `<tr>
+        <td><div class="cell-client"><div class="avatar-sm" style="background:${colorFor(i.professionnelId)}">${initials(i.professionnel)}</div><div><div class="cell-client-name">${esc(i.professionnel)}</div><div class="cell-client-sub">${esc(i.specialite || "—")}</div></div></div></td>
+        <td><span class="status-pill ${enCours ? "st-annule" : "st-absent"}">${TYPE_INDISPO[i.type] || i.type}${enCours ? " · en cours" : ""}</span></td>
+        <td>${fmtDateTime(i.dateDebut)}</td><td>${fmtDateTime(i.dateFin)}</td>
+        <td>${esc(i.motif || "—")}</td>
+        <td>${i.clientsNotifies ? `<span class="status-pill st-termine">Oui</span>` : `<span class="status-pill st-encours">Non</span>`}</td>
+        <td><div class="row-actions"><button class="icon-btn" title="Consulter l'agenda de ce jour" onclick="openAgenda('${i.professionnelId}','${toDay(i.dateDebut)}')">${iconCal()}</button></div></td>
+      </tr>`;
+    }).join("");
+  }
+  window.exportAbsencesCsv = function exportAbsencesCsv() {
+    const f = state.indispoFilter;
+    exportCsv("indisponibilites", "absences.csv", {
+      professionnelId: f.professionnelId || undefined, type: f.type || undefined,
+      from: f.from || undefined, to: f.to || undefined,
+    });
+  }
+
+  window.renderDomainesPage = function renderDomainesPage() {
+    const sansDomaine = PROS.filter((pr) => !pr.domaineId).length;
+    document.getElementById("page-domaines").innerHTML = `
+      <div class="page-head">
+        <div><h1 class="page-title">Domaines d'activité</h1><p class="page-sub">Classement des professionnels et filtres proposés sur la page publique</p></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="openDomaineForm()">${iconPlus()} Nouveau domaine</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportCsv('domaines','domaines.csv')">${iconPrinter()} Exporter</button>
+        </div>
+      </div>
+      ${sansDomaine ? `<div class="card" style="background:linear-gradient(135deg,#FDF1E2,#FBE0BF);border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
+        ${iconAlert()} ${sansDomaine} professionnel(s) ne sont rattachés à aucun domaine.
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="filtrerProsSansDomaine()">Les classer</button>
+      </div>` : ""}
+      <div class="card"><table class="data-table"><thead><tr><th>Domaine</th><th>Description</th><th>Professionnels</th><th>Visibilité</th><th>Ordre</th><th></th></tr></thead><tbody id="domainesTableBody"></tbody></table></div>
+    `;
+    renderDomainesTable();
+  }
+  window.renderDomainesTable = function renderDomainesTable() {
+    const body = document.getElementById("domainesTableBody");
+    if (!body) return;
+    if (!DOMAINES.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucun domaine défini — créez-en un pour classer vos professionnels</div></td></tr>`; return; }
+    body.innerHTML = DOMAINES.map((d) => `<tr>
+      <td><div class="cell-client-name">${esc(d.nom)}</div></td>
+      <td style="color:var(--ink-soft);font-size:12px;">${esc(d.description || "—")}</td>
+      <td>${d.nbProfessionnels}</td>
+      <td><span class="status-pill ${d.actif ? "st-termine" : "st-absent"}">${d.actif ? "Visible" : "Masqué"}</span></td>
+      <td>${d.ordre}</td>
+      <td><div class="row-actions">
+        <button class="icon-btn" title="Modifier" onclick="openDomaineForm('${d.id}')">${iconEdit()}</button>
+        <button class="icon-btn" title="${d.actif ? "Masquer" : "Rendre visible"}" onclick="toggleDomaineActif('${d.id}', ${d.actif ? "false" : "true"})">${d.actif ? iconX() : iconCheck()}</button>
+        ${d.nbProfessionnels === 0 ? `<button class="icon-btn" title="Supprimer" onclick="askDeleteDomaine('${d.id}','${escArg(d.nom)}')">${iconTrash()}</button>` : ""}
+      </div></td>
+    </tr>`).join("");
+  }
+  window.openDomaineForm = function openDomaineForm(id) {
+    const d = id ? DOMAINES.find((x) => x.id === id) : null;
+    if (id && !d) { showToast("Domaine introuvable — actualisez la page"); return; }
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">${d ? "Modifier le domaine" : "Nouveau domaine d'activité"}</p><p class="modal-sub">${d ? esc(d.nom) : "Ex. Santé, Beauté, Conseil juridique…"}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-row"><label>Nom du domaine *</label><input type="text" id="dmNom" value="${esc(d?.nom || "")}" placeholder="Ex. Santé" /></div>
+      <div class="field-row"><label>Description</label><textarea id="dmDesc" rows="2" placeholder="Courte description affichée côté public">${esc(d?.description || "")}</textarea></div>
+      <div class="field-2col">
+        <div class="field-row"><label>Ordre d'affichage</label><input type="number" min="0" id="dmOrdre" value="${d?.ordre ?? 0}" /></div>
+        <div class="field-row"><label>Visibilité</label><select id="dmActif"><option value="true" ${d && !d.actif ? "" : "selected"}>Visible</option><option value="false" ${d && !d.actif ? "selected" : ""}>Masqué</option></select></div>
+      </div>
+      <div class="field-hint">Un domaine masqué n'est plus proposé à la création de compte, mais les professionnels déjà rattachés le restent.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveDomaine(${d ? `'${d.id}'` : "null"})">${iconCheck()} ${d ? "Enregistrer" : "Créer le domaine"}</button></div>
+    `);
+  }
+  window.saveDomaine = async function saveDomaine(id) {
+    const nom = val("dmNom");
+    if (nom.length < 2) { showToast("Le nom du domaine doit contenir au moins 2 caractères"); return; }
+    const data = { nom, description: val("dmDesc"), ordre: Number(val("dmOrdre")) || 0, actif: val("dmActif") !== "false" };
+    try {
+      if (id) await adminApi.updateDomaine(id, data); else await adminApi.createDomaine(data);
+      closeModal();
+      await loadAll();
+      renderPage(state.page);
+      showToast(id ? "Domaine mis à jour" : `Domaine « ${esc(nom)} » créé`);
+    } catch (e) { showError(e); }
+  }
+  window.toggleDomaineActif = async function toggleDomaineActif(id, actif) {
+    try {
+      await adminApi.updateDomaine(id, { actif });
+      await loadAll();
+      renderPage(state.page);
+      showToast(actif ? "Domaine rendu visible" : "Domaine masqué");
+    } catch (e) { showError(e); }
+  }
+  window.askDeleteDomaine = function askDeleteDomaine(id, nom) {
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Supprimer le domaine</p><p class="modal-sub">${esc(nom)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-hint" style="margin-bottom:14px;">La suppression est refusée dès qu'un professionnel y est rattaché : masquez le domaine à la place.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-danger-ghost" onclick="confirmDeleteDomaine('${id}')">${iconTrash()} Supprimer</button></div>
+    `);
+  }
+  window.confirmDeleteDomaine = async function confirmDeleteDomaine(id) {
+    try {
+      await adminApi.deleteDomaine(id);
+      closeModal();
+      await loadAll();
+      renderPage(state.page);
+      showToast("Domaine supprimé");
+    } catch (e) { showError(e); }
+  }
+
   window.renderParamsPage = function renderParamsPage() {
     document.getElementById("page-params").innerHTML = `
       <div class="page-head"><div><h1 class="page-title">Paramètres généraux</h1><p class="page-sub">Ces informations sont affichées côté Client, dans l'interface publique</p></div></div>
       <div class="card" style="padding:22px;max-width:640px;">
-        <div class="field-row"><label>Nom de la plateforme / de l'entreprise</label><input type="text" id="plName" value="${PLATFORM.name}" /></div>
-        <div class="field-row"><label>Description</label><textarea id="plDesc" rows="2" placeholder="À propos...">${PLATFORM.desc}</textarea></div>
+        <div class="field-row"><label>Nom de la plateforme / de l'entreprise</label><input type="text" id="plName" value="${esc(PLATFORM.platformName)}" /></div>
+        <div class="field-row"><label>Description</label><textarea id="plDesc" rows="2" placeholder="À propos...">${esc(PLATFORM.description || "")}</textarea></div>
         <div class="field-2col">
-          <div class="field-row"><label>Téléphone de contact</label><input type="text" id="plPhone" value="${PLATFORM.phone}" /></div>
-          <div class="field-row"><label>E-mail de contact</label><input type="email" id="plEmail" value="${PLATFORM.email}" /></div>
+          <div class="field-row"><label>Téléphone de contact</label><input type="text" id="plPhone" value="${esc(PLATFORM.phone || "")}" /></div>
+          <div class="field-row"><label>E-mail de contact</label><input type="email" id="plEmail" value="${esc(PLATFORM.email || "")}" /></div>
         </div>
-        <div class="field-row"><label>Adresse</label><input type="text" id="plAddress" value="${PLATFORM.address}" /></div>
+        <div class="field-row"><label>Adresse</label><input type="text" id="plAddress" value="${esc(PLATFORM.address || "")}" /></div>
         <div class="field-row"><label>Jours ouvrables par défaut</label>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"].map((d) => `<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;border:1px solid var(--line);padding:6px 10px;border-radius:8px;"><input type="checkbox" id="jour_${d}" ${PLATFORM.joursOuvrables.includes(d)?'checked':''} /> ${d}</label>`).join("")}
+            ${JOURS.map((d) => `<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;border:1px solid var(--line);padding:6px 10px;border-radius:8px;background:linear-gradient(135deg,#FBFAFF,#F4EFFF);"><input type="checkbox" id="jour_${d}" ${(PLATFORM.joursOuvrables || []).includes(d) ? "checked" : ""} /> ${d}</label>`).join("")}
           </div>
         </div>
-        <div class="field-row"><label>Horaires généraux par défaut</label><input type="text" id="plHoraires" value="${PLATFORM.horaires}" /></div>
-        <div class="field-row"><label>Slogan principal</label><input type="text" id="plSlogan" value="${PLATFORM.slogan}" placeholder="Votre rendez-vous, simplifié." /></div>
-        <div class="field-row"><label>Conditions de réservation</label><textarea id="plConditions" rows="2">${PLATFORM.conditions}</textarea></div>
-        <div class="field-row"><label>Logo</label><div style="border:1.5px dashed var(--line);border-radius:10px;padding:18px;text-align:center;font-size:12px;color:var(--ink-soft);">Glissez une image ou cliquez pour téléverser</div></div>
-        <button class="btn btn-primary" onclick="savePlatform()">${iconCheck()} Enregistrer</button>
+        <div class="field-row"><label>Horaires généraux par défaut</label><input type="text" id="plHoraires" value="${esc(PLATFORM.horairesGeneraux || "")}" placeholder="09:00 – 18:00" /></div>
+        <div class="field-row"><label>Slogan principal</label><input type="text" id="plSlogan" value="${esc(PLATFORM.slogan || "")}" placeholder="Votre rendez-vous, simplifié." /></div>
+        <div class="field-row"><label>Conditions générales</label><textarea id="plConditions" rows="2">${esc(PLATFORM.conditions || "")}</textarea></div>
+        <div class="field-row"><label>Conditions affichées au moment de réserver</label><textarea id="plCondRes" rows="2" placeholder="Texte présenté au client avant validation…">${esc(PLATFORM.conditionsReservation || "")}</textarea></div>
+        <div class="field-2col">
+          <div class="field-row"><label>URL du logo</label><input type="text" id="plLogo" value="${esc(PLATFORM.logoUrl || "")}" placeholder="https://…" /></div>
+          <div class="field-row"><label>Image d'accueil (hero)</label><input type="text" id="plHero" value="${esc(PLATFORM.heroImageUrl || "")}" placeholder="https://…" /></div>
+        </div>
+        <div class="field-row"><label>Lien de localisation (carte)</label><input type="text" id="plLoc" value="${esc(PLATFORM.localisationUrl || "")}" placeholder="https://maps…" /></div>
+        <div class="field-hint">Domaine principal de l'instance : <b>${esc(PLATFORM.domaine || "non défini")}</b> (fixé lors de la configuration initiale).</div>
       </div>
       <div class="card" style="padding:22px;max-width:640px;margin-top:18px;">
-        <h3 style="margin:0 0 12px;font-size:14.5px;">Domaines d'activité de la plateforme</h3>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">${DOMAINES.map((d) => `<span class="status-pill st-reserve">${d}</span>`).join("")}</div>
-        <button class="btn btn-ghost btn-sm" onclick="openAddDomaine()">Ajouter un domaine d'activité</button>
+        <h3 style="margin:0 0 4px;font-size:14.5px;">Règles d'annulation et de report</h3>
+        <p class="page-sub" style="margin:0 0 14px;">Appliquées côté client lorsqu'il gère son rendez-vous depuis son lien de suivi.</p>
+        <div class="field-2col">
+          <div class="field-row"><label>Délai minimum avant annulation (heures)</label><input type="number" min="0" id="plDelaiAnnul" value="${PLATFORM.delaiMinAnnulationHeures ?? 0}" /></div>
+          <div class="field-row"><label>Délai minimum avant modification (heures)</label><input type="number" min="0" id="plDelaiModif" value="${PLATFORM.delaiMinModificationHeures ?? 48}" /></div>
+        </div>
+        <div class="field-row"><label>Nombre de reports autorisés par rendez-vous</label><input type="number" min="0" id="plMaxChang" value="${PLATFORM.maxChangementsRdv ?? 1}" /></div>
+        <button class="btn btn-primary" onclick="savePlatform()">${iconCheck()} Enregistrer les paramètres</button>
       </div>
     `;
   }
-  window.savePlatform = function savePlatform() {
-    PLATFORM.name = document.getElementById("plName").value;
-    PLATFORM.desc = document.getElementById("plDesc").value;
-    PLATFORM.phone = document.getElementById("plPhone").value;
-    PLATFORM.email = document.getElementById("plEmail").value;
-    PLATFORM.address = document.getElementById("plAddress").value;
-    PLATFORM.horaires = document.getElementById("plHoraires").value;
-    PLATFORM.slogan = document.getElementById("plSlogan").value;
-    PLATFORM.conditions = document.getElementById("plConditions").value;
-    PLATFORM.joursOuvrables = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"].filter((d) => document.getElementById("jour_"+d).checked);
-    showToast("Paramètres généraux enregistrés");
-    renderDashboard();
+  window.savePlatform = async function savePlatform() {
+    const data = {
+      platformName: val("plName"),
+      description: val("plDesc"),
+      phone: val("plPhone"),
+      address: val("plAddress"),
+      horairesGeneraux: val("plHoraires"),
+      slogan: val("plSlogan"),
+      conditions: val("plConditions"),
+      conditionsReservation: val("plCondRes"),
+      logoUrl: val("plLogo"),
+      heroImageUrl: val("plHero"),
+      localisationUrl: val("plLoc"),
+      delaiMinAnnulationHeures: Number(val("plDelaiAnnul")) || 0,
+      delaiMinModificationHeures: Number(val("plDelaiModif")) || 0,
+      maxChangementsRdv: Number(val("plMaxChang")) || 0,
+      joursOuvrables: JOURS.filter((d) => document.getElementById("jour_" + d)?.checked),
+    };
+    if (val("plEmail")) data.email = val("plEmail");
+    try {
+      PLATFORM = { ...PLATFORM, ...(await adminApi.updateParams(data)) };
+      showToast("Paramètres généraux enregistrés");
+      updateBadges();
+    } catch (e) { showError(e); }
   }
-  window.openAddDomaine = function openAddDomaine() {
-    const html = `
-      <div class="modal-head"><div><p class="modal-title">Ajouter un domaine d'activité</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="field-row"><label>Nom du domaine</label><input type="text" id="newDomaine" placeholder="Ex. Vétérinaire" /></div>
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveDomaine()">${iconCheck()} Ajouter</button></div>
+  window.renderAuditPage = function renderAuditPage() {
+    const f = state.auditFilter;
+    document.getElementById("page-audit").innerHTML = `
+      <div class="page-head"><div><h1 class="page-title">Journal d'audit</h1><p class="page-sub">Traçabilité des actions sensibles de la plateforme</p></div><button class="btn btn-ghost btn-sm" onclick="exportAuditCsv()">${iconPrinter()} Exporter</button></div>
+      <div class="filter-row">
+        <select onchange="updateAuditFilter('action', this.value)"><option value="">Toutes les actions</option>${AUDIT.actions.map((a) => `<option value="${a}" ${f.action === a ? "selected" : ""}>${a}</option>`).join("")}</select>
+        <input type="date" value="${f.from}" onchange="updateAuditFilter('from', this.value)" title="À partir du" />
+        <input type="date" value="${f.to}" onchange="updateAuditFilter('to', this.value)" title="Jusqu'au" />
+      </div>
+      <div class="card"><table class="data-table"><thead><tr><th>Date</th><th>Action</th><th>Utilisateur</th><th>Cible</th><th>Détails</th></tr></thead><tbody id="auditTableBody"></tbody></table></div>
+      <div id="auditFooter" style="padding:12px 2px;font-size:12px;color:var(--ink-soft);"></div>
     `;
-    openModal(html);
+    reloadAudit();
   }
-  window.saveDomaine = function saveDomaine() {
-    const v = document.getElementById("newDomaine").value.trim();
-    if (!v) return;
-    DOMAINES.push(v); closeModal(); renderParamsPage();
-    showToast(`Domaine « ${v} » ajouté à la plateforme`);
+  window.exportAuditCsv = function exportAuditCsv() {
+    const f = state.auditFilter;
+    exportCsv("audit", "journal-audit.csv", { action: f.action || undefined, from: f.from || undefined, to: f.to || undefined });
+  }
+  window.updateAuditFilter = function updateAuditFilter(k, v) { state.auditFilter[k] = v; state.auditFilter.skip = 0; reloadAudit(); }
+  window.reloadAudit = async function reloadAudit(append) {
+    try {
+      const f = state.auditFilter;
+      const data = await adminApi.audit({ action: f.action || undefined, from: f.from || undefined, to: f.to || undefined, take: f.take, skip: f.skip });
+      AUDIT = { ...data, items: append ? AUDIT.items.concat(data.items) : data.items };
+      renderAuditTable();
+    } catch (e) { showError(e); }
+  }
+  window.loadMoreAudit = function loadMoreAudit() { state.auditFilter.skip += state.auditFilter.take; reloadAudit(true); }
+  window.renderAuditTable = function renderAuditTable() {
+    const body = document.getElementById("auditTableBody");
+    if (!body) return;
+    if (!AUDIT.items.length) { body.innerHTML = `<tr><td colspan="5"><div class="table-empty">Aucune entrée d'audit</div></td></tr>`; }
+    else {
+      body.innerHTML = AUDIT.items.map((a) => `<tr>
+        <td>${fmtDateTime(a.createdAt)}</td>
+        <td><span class="status-pill st-reserve">${esc(a.action)}</span></td>
+        <td>${esc(a.user?.email || "—")}</td>
+        <td style="font-size:11px;color:var(--ink-soft)">${esc(a.cible || "—")}</td>
+        <td style="font-size:11px;color:var(--ink-soft);max-width:280px;overflow:hidden;text-overflow:ellipsis;">${esc(a.details ? JSON.stringify(a.details) : "")}</td>
+      </tr>`).join("");
+    }
+    const footer = document.getElementById("auditFooter");
+    if (footer) {
+      footer.innerHTML = `${AUDIT.items.length} entrée(s) affichée(s) sur ${AUDIT.total}
+        ${AUDIT.items.length < AUDIT.total ? `<button class="btn btn-ghost btn-sm" style="margin-left:10px" onclick="loadMoreAudit()">Charger la suite</button>` : ""}`;
+    }
   }
 
-  /* =========================================================
-     PAGE : NOTIFICATIONS
-     ========================================================= */
+  const NOTIF_ICONS = {
+    new: { bg: "linear-gradient(135deg,#E9E3FF,#D5C8FF)", color: "#7350E8", svg: '<path d="M12 5v14M5 12h14"/>' },
+    warn: { bg: "linear-gradient(135deg,#FDF1E2,#FBE0BF)", color: "#E2954A", svg: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>' },
+  };
   window.notifRowHtml = function notifRowHtml(n) {
-    const ic = NOTIF_ICONS[n.type];
-    return `<div class="notif-row ${n.unread?'unread':''}"><div class="notif-icon" style="background:${ic.bg};color:${ic.color}">${svg(ic.svg,16)}</div><div class="notif-text"><span>${n.text}</span><div class="notif-time">${n.time}</div></div>${n.unread?`<span class="notif-dot-unread"></span>`:""}</div>`;
+    const ic = NOTIF_ICONS[n.type] || NOTIF_ICONS.new;
+    return `<div class="notif-row ${n.unread ? "unread" : ""}"><div class="notif-icon" style="background:${ic.bg};color:${ic.color}">${svg(ic.svg, 16)}</div><div class="notif-text"><span>${n.text}</span><div class="notif-time">${n.time}</div></div>${n.unread ? `<span class="notif-dot-unread"></span>` : ""}</div>`;
   }
   window.renderNotifsPage = function renderNotifsPage() {
     document.getElementById("page-notifs").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Notifications</h1><p class="page-sub">Inscriptions en attente et événements de la plateforme</p></div><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Tout marquer comme lu</button></div>
-      <div class="card">${NOTIFS.map((n) => notifRowHtml(n)).join("")}</div>
+      <div class="page-head"><div><h1 class="page-title">Notifications</h1><p class="page-sub">Inscriptions en attente, événements de la plateforme et annonces diffusées</p></div><div style="display:flex;gap:8px;"><button class="btn btn-primary btn-sm" onclick="openAnnonce()">${iconSend()} Nouvelle annonce</button><button class="btn btn-ghost btn-sm" onclick="refreshAll()">${iconRefresh()} Actualiser</button><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Tout marquer comme lu</button></div></div>
+      <div class="card">${NOTIFS.length ? NOTIFS.map((n) => notifRowHtml(n)).join("") : `<div class="table-empty">Aucune notification</div>`}</div>
     `;
   }
-  window.markAllRead = function markAllRead() { NOTIFS.forEach((n)=>n.unread=false); renderNotifsPage(); updateBadges(); }
+  window.openAnnonce = function openAnnonce(scope) {
+    const selection = scope ? [...SELECTION[scope]] : [];
+    openModal(`
+      <div class="modal-head"><div><p class="modal-title">Diffuser une annonce</p><p class="modal-sub">${selection.length ? `${selection.length} destinataire(s) sélectionné(s)` : "Notification interne, visible dans l'espace de chaque destinataire"}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      ${selection.length
+        ? `<div class="field-hint" style="margin-bottom:14px;">L'annonce sera envoyée aux ${selection.length} compte(s) cochés dans le tableau.</div>`
+        : `<div class="field-row"><label>Destinataires</label><select id="anCible">${Object.entries(CIBLES_ANNONCE).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></div>`}
+      <div class="field-row"><label>Message *</label><textarea id="anMsg" rows="4" placeholder="Ex. Maintenance prévue dimanche de 8 h à 10 h : la prise de rendez-vous en ligne sera suspendue."></textarea></div>
+      <div class="field-hint">Seuls les comptes actifs reçoivent l'annonce. Elle est tracée dans le journal d'audit.</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="sendAnnonce(${scope ? `'${scope}'` : "null"})">${iconSend()} Envoyer</button></div>
+    `);
+  }
+  window.sendAnnonce = async function sendAnnonce(scope) {
+    const message = val("anMsg");
+    if (message.length < 3) { showToast("Saisissez le message à diffuser"); return; }
+    const selection = scope ? [...SELECTION[scope]] : [];
+    const payload = selection.length
+      ? { cible: "SELECTION", userIds: selection, message }
+      : { cible: document.getElementById("anCible")?.value || "TOUS", message };
+    try {
+      const res = await adminApi.envoyerAnnonce(payload);
+      closeModal();
+      showToast(esc(res.message));
+    } catch (e) { showError(e); }
+  }
+  window.markAllRead = async function markAllRead() {
+    try {
+      await adminApi.markNotificationsRead();
+      NOTIFS = NOTIFS.map((n) => ({ ...n, unread: false }));
+      renderNotifsPage();
+      updateBadges();
+      showToast("Notifications marquées comme lues");
+    } catch (e) { showError(e); }
+  }
 
-  window.exportMock = function exportMock(label) { showToast(`${iconPrinter()} Export « ${label} » généré (PDF / Excel)`); }
+  window.exportCsv = async function exportCsv(entity, filename, params) {
+    try { await adminApi.downloadExport(entity, filename, params); showToast(`${iconPrinter()} Export « ${filename} » téléchargé`); }
+    catch (e) { showError(e); }
+  }
 
-  /* =========================================================
-     MODALS génériques
-     ========================================================= */
   window.closeModal = function closeModal() {
     const root = document.getElementById("modalRoot");
+    if (!root) return;
     const ov = root.querySelector(".modal-overlay");
-    if (ov) { ov.classList.remove("open"); setTimeout(() => root.innerHTML="", 200); }
+    if (ov) { ov.classList.remove("open"); setTimeout(() => { root.innerHTML = ""; }, 200); }
   }
   window.openModal = function openModal(innerHtml, wide) {
-    document.getElementById("modalRoot").innerHTML = `<div class="modal-overlay" id="activeOverlay"><div class="modal-box ${wide?'wide':''}">${innerHtml}</div></div>`;
+    document.getElementById("modalRoot").innerHTML = `<div class="modal-overlay" id="activeOverlay"><div class="modal-box ${wide ? "wide" : ""}">${innerHtml}</div></div>`;
     const ov = document.getElementById("activeOverlay");
     requestAnimationFrame(() => ov.classList.add("open"));
-    ov.addEventListener("click", (e) => { if (e.target===ov) closeModal(); });
+    ov.addEventListener("click", (e) => { if (e.target === ov) closeModal(); });
   }
 
-  /* =========================================================
-     GLOBAL SEARCH + INIT
-     ========================================================= */
-  document.getElementById("globalSearch").addEventListener("input", function() {
-    const q = this.value.trim(); if (q.length<2) return;
-    goToPage("users"); setTimeout(() => { document.getElementById("userSearchInput").value = q; renderUsersTable(); }, 0);
-  }, { signal: ac.signal });
-  renderPage("dashboard");
+  document.getElementById("globalSearch").addEventListener("input", debounce(function () {
+    const q = this.value.trim();
+    if (q.length < 2) return;
+    state.usersFilter.search = q;
+    goToPage("users");
+  }), { signal: ac.signal });
+
+  (async () => {
+    await loadAll();
+    if (!ac.signal.aborted) renderPage(state.page);
+  })();
 
     // ---- end ported script ----
 
     return () => {
       ac.abort();
-
       delete (window as any).todayISO;
       delete (window as any).isoPlusDays;
-      delete (window as any).uid;
+      delete (window as any).toDay;
+      delete (window as any).toHeure;
       delete (window as any).fmtDateShort;
+      delete (window as any).fmtDateTime;
+      delete (window as any).fmtRelative;
+      delete (window as any).fmtMois;
+      delete (window as any).fmtPrix;
+      delete (window as any).esc;
+      delete (window as any).escArg;
       delete (window as any).initials;
+      delete (window as any).colorFor;
+      delete (window as any).val;
       delete (window as any).showToast;
+      delete (window as any).showError;
+      delete (window as any).loadAll;
+      delete (window as any).refreshAll;
       delete (window as any).goToPage;
       delete (window as any).renderPage;
       delete (window as any).updateBadges;
@@ -592,44 +1537,119 @@ export default function AdminDashboard() {
       delete (window as any).iconX;
       delete (window as any).iconEye;
       delete (window as any).iconEdit;
+      delete (window as any).iconTrash;
+      delete (window as any).iconKey;
+      delete (window as any).iconPlus;
       delete (window as any).iconPrinter;
+      delete (window as any).iconRefresh;
       delete (window as any).iconUsers;
       delete (window as any).iconBriefcase;
       delete (window as any).iconCal;
       delete (window as any).iconAlert;
+      delete (window as any).iconTag;
+      delete (window as any).iconSend;
+      delete (window as any).iconClock;
+      delete (window as any).iconMail;
       delete (window as any).iconChevronLeft;
+      delete (window as any).iconChevronRight;
       delete (window as any).renderDashboard;
       delete (window as any).renderProsPage;
       delete (window as any).updateProFilter;
+      delete (window as any).reloadPros;
       delete (window as any).renderProsTable;
+      delete (window as any).exportProsCsv;
+      delete (window as any).filtrerProsSansDomaine;
+      delete (window as any).toggleSelection;
+      delete (window as any).toggleAllSelection;
+      delete (window as any).renderBulkBar;
+      delete (window as any).applyBulkStatut;
       delete (window as any).openProFiche;
-      delete (window as any).setProStatut;
+      delete (window as any).openEditPro;
+      delete (window as any).saveEditPro;
+      delete (window as any).openEditRec;
+      delete (window as any).saveEditRec;
+      delete (window as any).openChangeEmail;
+      delete (window as any).saveChangeEmail;
+      delete (window as any).setProDomaine;
+      delete (window as any).setCompteStatut;
+      delete (window as any).openCreateCompte;
+      delete (window as any).saveCompte;
+      delete (window as any).openResetPassword;
+      delete (window as any).saveResetPassword;
+      delete (window as any).askDeleteCompte;
+      delete (window as any).confirmDeleteCompte;
       delete (window as any).renderRecPage;
       delete (window as any).updateRecFilter;
+      delete (window as any).reloadRecs;
       delete (window as any).renderRecTable;
-      delete (window as any).setRecStatut;
+      delete (window as any).exportRecsCsv;
       delete (window as any).openAffectForm;
       delete (window as any).saveAffect;
+      delete (window as any).openPermissions;
+      delete (window as any).savePermissions;
       delete (window as any).renderUsersPage;
+      delete (window as any).updateUsersFilter;
+      delete (window as any).reloadUsers;
       delete (window as any).renderUsersTable;
       delete (window as any).renderClientsPage;
+      delete (window as any).updateClientsFilter;
+      delete (window as any).reloadClients;
       delete (window as any).renderClientsTable;
+      delete (window as any).openClientFiche;
+      delete (window as any).openEditClient;
+      delete (window as any).saveEditClient;
+      delete (window as any).askDeleteClient;
+      delete (window as any).confirmDeleteClient;
       delete (window as any).renderRdvPage;
       delete (window as any).updateRdvFilter;
+      delete (window as any).resetRdvFilter;
+      delete (window as any).reloadRdv;
       delete (window as any).renderRdvTable;
+      delete (window as any).loadMoreRdv;
       delete (window as any).openRdvFiche;
+      delete (window as any).exportRdvCsv;
+      delete (window as any).openDeplacerRdv;
+      delete (window as any).confirmDeplacerRdv;
+      delete (window as any).openAnnulerRdv;
+      delete (window as any).confirmAnnulerRdv;
       delete (window as any).renderServicesPage;
+      delete (window as any).updateServicesFilter;
+      delete (window as any).reloadServices;
       delete (window as any).renderServicesTable;
       delete (window as any).toggleServiceStatut;
+      delete (window as any).exportServicesCsv;
+      delete (window as any).setServiceDisponibilite;
+      delete (window as any).askDeleteService;
+      delete (window as any).confirmDeleteService;
       delete (window as any).renderAgendasPage;
+      delete (window as any).openAgenda;
+      delete (window as any).renderAbsencesPage;
+      delete (window as any).updateIndispoFilter;
+      delete (window as any).resetIndispoFilter;
+      delete (window as any).reloadIndispos;
+      delete (window as any).renderAbsencesTable;
+      delete (window as any).exportAbsencesCsv;
+      delete (window as any).renderDomainesPage;
+      delete (window as any).renderDomainesTable;
+      delete (window as any).openDomaineForm;
+      delete (window as any).saveDomaine;
+      delete (window as any).toggleDomaineActif;
+      delete (window as any).askDeleteDomaine;
+      delete (window as any).confirmDeleteDomaine;
       delete (window as any).renderParamsPage;
       delete (window as any).savePlatform;
-      delete (window as any).openAddDomaine;
-      delete (window as any).saveDomaine;
+      delete (window as any).renderAuditPage;
+      delete (window as any).updateAuditFilter;
+      delete (window as any).reloadAudit;
+      delete (window as any).loadMoreAudit;
+      delete (window as any).renderAuditTable;
+      delete (window as any).exportAuditCsv;
       delete (window as any).notifRowHtml;
       delete (window as any).renderNotifsPage;
+      delete (window as any).openAnnonce;
+      delete (window as any).sendAnnonce;
       delete (window as any).markAllRead;
-      delete (window as any).exportMock;
+      delete (window as any).exportCsv;
       delete (window as any).closeModal;
       delete (window as any).openModal;
     };
@@ -639,16 +1659,30 @@ export default function AdminDashboard() {
     <>
       <style>{`
   :root {
-    --primary: #8957FF;
-    --primary-dark: #6B3FD9;
-    --primary-tint: #F1ECFF;
+    --primary: #7350E8;
+    --primary-light: #9B7CF2;
+    --primary-soft: #E9E3FF;
+    --primary-dark: #5A3BC7;
+    --primary-tint: #E9E3FF;
     --ink: #1B1730;
     --ink-soft: #6B6580;
-    --paper: #F7F6FB;
+    --paper: #F6F4FC;
     --card: #FFFFFF;
     --line: #E7E3F3;
     --radius: 14px;
-    --st-reserve: #8957FF;
+
+    --grad-primary: linear-gradient(135deg, #7350E8 0%, #9B7CF2 100%);
+    --grad-primary-deep: linear-gradient(135deg, #7350E8 0%, #5A3BC7 100%);
+    --grad-primary-hover: linear-gradient(135deg, #9B7CF2 0%, #7350E8 100%);
+    --grad-sidebar: linear-gradient(175deg, #7350E8 0%, #6543D4 45%, #4B2DAF 100%);
+    --grad-soft: linear-gradient(135deg, #E9E3FF 0%, #F6F2FF 100%);
+    --grad-soft-reverse: linear-gradient(135deg, #F6F2FF 0%, #E9E3FF 100%);
+    --grad-soft-vertical: linear-gradient(180deg, #FFFFFF 0%, #F4EFFF 100%);
+    --grad-soft-horizontal: linear-gradient(90deg, #E9E3FF 0%, #FBFAFF 60%);
+    --grad-avatar: linear-gradient(135deg, #9B7CF2, #7350E8);
+    --grad-page-bg: linear-gradient(160deg, #F6F4FC 0%, #EFEAFF 45%, #F6F4FC 100%);
+
+    --st-reserve: #7350E8;
     --st-arrive: #2FA79D;
     --st-encours: #E2954A;
     --st-termine: #3FA65C;
@@ -656,132 +1690,317 @@ export default function AdminDashboard() {
     --st-annule: #D9483C;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--paper); color: var(--ink); }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--grad-page-bg);
+    background-attachment: fixed;
+    color: var(--ink);
+    min-height: 100vh;
+  }
   button, input, select, textarea { font-family: inherit; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #9B7CF2, #7350E8); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #7350E8, #5A3BC7); }
+  ::-webkit-scrollbar-track { background: #F0ECFA; }
 
   .app { display: flex; min-height: 100vh; }
 
   /* ---------- Sidebar ---------- */
   .sidebar {
-    width: 240px; flex-shrink: 0; background: var(--card); border-right: 1px solid var(--line);
-    display: flex; flex-direction: column; padding: 20px 14px; position: sticky; top: 0; height: 100vh;
+    width: 240px; flex-shrink: 0;
+    background: var(--grad-sidebar);
+    border-right: none;
+    display: flex; flex-direction: column; padding: 20px 14px;
+    position: sticky; top: 0; height: 100vh;
     transition: width .25s ease, padding .25s ease;
+    color: #fff;
+    box-shadow: 6px 0 28px rgba(115, 80, 232, 0.32);
+    overflow: hidden;
+  }
+  .sidebar::before {
+    content: ""; position: absolute; top: -80px; right: -80px;
+    width: 220px; height: 220px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(155,124,242,0.6) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .sidebar::after {
+    content: ""; position: absolute; bottom: -110px; left: -70px;
+    width: 220px; height: 220px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(233,227,255,0.3) 0%, transparent 70%);
+    pointer-events: none;
   }
   .sidebar.collapsed { width: 76px; }
-  .sb-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; }
-  .sb-logo { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; flex-shrink: 0; }
-  .sb-brand-text { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; }
+  .sb-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; position: relative; z-index: 1; }
+  .sb-logo {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, #E9E3FF 0%, #9B7CF2 100%);
+    color: #3A2090;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 16px; flex-shrink: 0;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.6);
+  }
+  .sb-brand-text { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; color: #fff; }
   .sidebar.collapsed .sb-brand-text, .sidebar.collapsed .nav-label, .sidebar.collapsed .sb-section-title { display: none; }
 
-  .sb-section-title { font-size: 10.5px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .07em; margin: 14px 10px 8px; }
+  .sb-section-title {
+    font-size: 10.5px; font-weight: 700; color: rgba(233,227,255,0.72);
+    text-transform: uppercase; letter-spacing: .09em; margin: 14px 10px 8px;
+    position: relative; z-index: 1;
+  }
   .nav-item {
     display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 11px;
-    color: var(--ink-soft); font-size: 13.5px; font-weight: 600; cursor: pointer; margin-bottom: 3px;
-    transition: background .15s ease, color .15s ease; position: relative; white-space: nowrap;
+    color: rgba(255,255,255,0.85); font-size: 13.5px; font-weight: 600; cursor: pointer;
+    margin-bottom: 3px; position: relative; white-space: nowrap;
+    transition: background .18s ease, color .18s ease, transform .12s ease;
+    z-index: 1;
   }
-  .nav-item:hover { background: var(--paper); color: var(--ink); }
-  .nav-item.active { background: var(--primary-tint); color: var(--primary-dark); }
+  .nav-item:hover {
+    background: linear-gradient(135deg, rgba(233,227,255,0.2), rgba(155,124,242,0.25));
+    color: #fff;
+    transform: translateX(2px);
+  }
+  .nav-item.active {
+    background: linear-gradient(135deg, #E9E3FF 0%, #9B7CF2 100%);
+    color: #3A2090;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.6);
+    font-weight: 700;
+  }
+  .nav-item.active::before {
+    content: ""; position: absolute; left: -14px; top: 50%; transform: translateY(-50%);
+    width: 4px; height: 22px; border-radius: 0 4px 4px 0; background: #fff;
+    box-shadow: 0 0 14px rgba(255,255,255,0.9);
+  }
   .nav-item svg { flex-shrink: 0; }
-  .nav-badge { margin-left: auto; background: var(--primary); color: #fff; font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 1px 7px; }
+  .nav-badge {
+    margin-left: auto;
+    background: #fff; color: var(--primary-dark);
+    font-size: 10.5px; font-weight: 800; border-radius: 999px; padding: 1px 7px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .nav-item.active .nav-badge { background: var(--primary-dark); color: #E9E3FF; }
   .sidebar.collapsed .nav-badge { position: absolute; top: 4px; right: 4px; margin-left: 0; padding: 1px 5px; }
 
   .sb-collapse-btn {
-    margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 11px;
-    color: var(--ink-soft); font-size: 12.5px; font-weight: 600; cursor: pointer; border: 1px solid var(--line); background: none;
+    margin-top: auto; display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 11px;
+    color: rgba(255,255,255,0.9); font-size: 12.5px; font-weight: 600;
+    cursor: pointer; border: 1px solid rgba(233,227,255,0.3);
+    background: linear-gradient(135deg, rgba(233,227,255,0.15), rgba(155,124,242,0.18));
+    position: relative; z-index: 1;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
   }
-  .sb-collapse-btn:hover { background: var(--paper); }
+  .sb-collapse-btn:hover {
+    background: linear-gradient(135deg, rgba(233,227,255,0.28), rgba(155,124,242,0.35));
+    border-color: rgba(233,227,255,0.55);
+    color: #fff;
+  }
 
   /* ---------- Main / Topbar ---------- */
   .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .topbar {
-    height: 68px; flex-shrink: 0; background: var(--card); border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 16px; padding: 0 26px; position: sticky; top: 0; z-index: 20;
+    height: 68px; flex-shrink: 0;
+    background: var(--grad-soft-vertical);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; padding: 0 26px;
+    position: sticky; top: 0; z-index: 20;
+    box-shadow: 0 2px 18px rgba(115, 80, 232, 0.1);
   }
   .tb-search { flex: 1; max-width: 460px; position: relative; }
   .tb-search input {
-    width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px 9px 38px;
-    font-size: 13px; background: var(--paper); color: var(--ink); outline: none; transition: border-color .15s ease;
+    width: 100%; border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 9px 14px 9px 38px; font-size: 13px;
+    background: linear-gradient(135deg, #F6F4FC 0%, #EFEAFF 100%);
+    color: var(--ink); outline: none;
+    transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
   }
-  .tb-search input:focus { border-color: var(--primary); }
-  .tb-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ink-soft); }
+  .tb-search input:focus {
+    border-color: var(--primary); background: #fff;
+    box-shadow: 0 0 0 3px rgba(115, 80, 232, 0.18);
+  }
+  .tb-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--primary-dark); }
   .tb-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
-  .tb-icon-btn { position: relative; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); transition: background .15s ease; }
-  .tb-icon-btn:hover { background: var(--paper); }
-  .tb-icon-dot { position: absolute; top: -5px; right: -5px; background: var(--st-annule); color: #fff; font-size: 10px; font-weight: 700; border-radius: 999px; min-width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; padding: 0 3px; border: 2px solid var(--card); }
+  .tb-icon-btn {
+    position: relative; width: 38px; height: 38px; border-radius: 10px;
+    border: 1.5px solid var(--line);
+    background: linear-gradient(135deg, #FFFFFF 0%, #F4EFFF 100%);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    color: var(--primary-dark);
+    transition: background .15s ease, border-color .15s ease, transform .12s ease, box-shadow .15s ease;
+  }
+  .tb-icon-btn:hover {
+    background: var(--grad-primary);
+    color: #fff;
+    border-color: transparent;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(115, 80, 232, 0.35);
+  }
+  .tb-icon-dot {
+    position: absolute; top: -5px; right: -5px;
+    background: linear-gradient(135deg, #E2478A, #D9483C);
+    color: #fff; font-size: 10px; font-weight: 700;
+    border-radius: 999px; min-width: 17px; height: 17px; display: flex;
+    align-items: center; justify-content: center; padding: 0 3px;
+    border: 2px solid var(--card);
+    box-shadow: 0 3px 8px rgba(217, 72, 60, 0.4);
+  }
   .tb-user { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-  .tb-avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, #FFB86B, #FF6BAE); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
+  .tb-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: var(--grad-avatar);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 14px;
+    box-shadow: 0 6px 16px rgba(115, 80, 232, 0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+  }
   .tb-user-text { line-height: 1.3; }
   .tb-user-name { font-size: 13px; font-weight: 700; }
-  .tb-user-role { font-size: 11px; color: var(--ink-soft); }
+  .tb-user-role {
+    font-size: 11px; font-weight: 700;
+    background: var(--grad-primary);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
 
   .page { padding: 26px 30px 60px; display: none; }
   .page.active { display: block; }
   .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
-  .page-title { font-size: 23px; font-weight: 800; margin: 0 0 4px; }
+  .page-title {
+    font-size: 23px; font-weight: 800; margin: 0 0 4px;
+    background: var(--grad-primary-deep);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
   .page-sub { font-size: 13px; color: var(--ink-soft); margin: 0; }
 
   .btn {
-    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; border: none;
-    border-radius: 10px; padding: 10px 16px; cursor: pointer; transition: transform .1s ease, opacity .15s ease, background .15s ease;
+    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700;
+    border: none; border-radius: 10px; padding: 10px 16px; cursor: pointer;
+    transition: transform .1s ease, opacity .15s ease, background .15s ease, box-shadow .15s ease;
   }
   .btn:hover { transform: translateY(-1px); }
-  .btn-primary { background: var(--primary); color: #fff; }
-  .btn-primary:hover { background: var(--primary-dark); }
-  .btn-ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
-  .btn-ghost:hover { background: var(--paper); }
+  .btn-primary {
+    background: var(--grad-primary);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(115, 80, 232, 0.4);
+  }
+  .btn-primary:hover {
+    background: var(--grad-primary-hover);
+    box-shadow: 0 10px 26px rgba(115, 80, 232, 0.55);
+  }
+  .btn-ghost {
+    background: linear-gradient(135deg, #FFFFFF, #F6F4FC);
+    color: var(--primary-dark);
+    border: 1.5px solid var(--line);
+    font-weight: 700;
+  }
+  .btn-ghost:hover {
+    background: var(--grad-soft);
+    border-color: var(--primary-light);
+    color: var(--primary-dark);
+    box-shadow: 0 6px 14px rgba(115, 80, 232, 0.18);
+  }
   .btn-sm { padding: 7px 12px; font-size: 12px; }
-  .btn-danger-ghost { background: #FDEDEC; color: var(--st-annule); border: 1px solid #F7D3D0; }
+  .btn-danger-ghost { background: linear-gradient(135deg, #FDEDEC, #FBDAD7); color: var(--st-annule); border: 1px solid #F7D3D0; }
+  .btn-danger-ghost:hover { background: linear-gradient(135deg, #FBDAD7, #F7C5C1); }
 
   /* ---------- Cards / stats ---------- */
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 24px; }
-  .stat-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
-  .stat-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
-  .stat-value { font-size: 22px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
-  .stat-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; }
+  .stat-card {
+    background: linear-gradient(180deg, #FFFFFF 0%, #FBFAFF 100%);
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .stat-card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--grad-primary);
+    opacity: 0; transition: opacity .2s ease;
+  }
+  .stat-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--primary-light);
+    box-shadow: 0 16px 32px rgba(115, 80, 232, 0.22);
+  }
+  .stat-card:hover::before { opacity: 1; }
+  .stat-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; position: relative; z-index: 1; }
+  .stat-value { font-size: 22px; font-weight: 800; line-height: 1; margin-bottom: 4px; position: relative; z-index: 1; }
+  .stat-label { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; position: relative; z-index: 1; }
 
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
-  .card-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
-  .card-head h3 { font-size: 14.5px; margin: 0; }
+  .card {
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    background: var(--grad-soft-vertical);
+  }
+  .card-head h3 { font-size: 14.5px; margin: 0; color: var(--primary-dark); }
 
   .status-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
   .status-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .st-reserve { background: #F1ECFF; color: var(--st-reserve); }
-  .st-arrive { background: #E6F7F5; color: var(--st-arrive); }
-  .st-encours { background: #FDF1E2; color: var(--st-encours); }
-  .st-termine { background: #E9F7ED; color: var(--st-termine); }
-  .st-absent { background: #EEEDF2; color: var(--st-absent); }
-  .st-annule { background: #FDEDEC; color: var(--st-annule); }
+  .st-reserve { background: linear-gradient(135deg, #E9E3FF 0%, #D5C8FF 100%); color: var(--primary-dark); }
+  .st-arrive { background: linear-gradient(135deg, #E6F7F5 0%, #D4F0EB 100%); color: var(--st-arrive); }
+  .st-encours { background: linear-gradient(135deg, #FDF1E2 0%, #FBE4C8 100%); color: var(--st-encours); }
+  .st-termine { background: linear-gradient(135deg, #E9F7ED 0%, #D5EFDD 100%); color: var(--st-termine); }
+  .st-absent { background: linear-gradient(135deg, #EEEDF2 0%, #E2E0EA 100%); color: var(--st-absent); }
+  .st-annule { background: linear-gradient(135deg, #FDEDEC 0%, #FBD8D4 100%); color: var(--st-annule); }
 
   .avatar-sm { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; flex-shrink: 0; }
 
-  /* ---------- Dashboard: prochain RDV + mini agenda ---------- */
+  /* ---------- Dashboard ---------- */
   .dash-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; align-items: start; }
   @media (max-width: 980px) { .dash-grid { grid-template-columns: 1fr; } }
-  .next-rdv-card { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border-radius: var(--radius); padding: 20px 22px; color: #fff; margin-bottom: 18px; }
-  .next-rdv-eyebrow { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; opacity: .8; margin: 0 0 8px; }
-  .next-rdv-name { font-size: 18px; font-weight: 800; margin: 0 0 2px; }
-  .next-rdv-meta { font-size: 12.5px; opacity: .9; }
-  .next-rdv-time { font-size: 26px; font-weight: 800; margin-top: 10px; }
-  .dash-list-row { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .next-rdv-card {
+    background: var(--grad-primary);
+    border-radius: var(--radius); padding: 20px 22px; color: #fff;
+    margin-bottom: 18px;
+    box-shadow: 0 16px 36px rgba(115, 80, 232, 0.4);
+    position: relative; overflow: hidden;
+  }
+  .next-rdv-card::before {
+    content: ""; position: absolute; top: -60px; right: -60px;
+    width: 180px; height: 180px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(233,227,255,0.4) 0%, transparent 70%);
+  }
+  .next-rdv-eyebrow { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; opacity: .9; margin: 0 0 8px; position: relative; }
+  .next-rdv-name { font-size: 18px; font-weight: 800; margin: 0 0 2px; position: relative; }
+  .next-rdv-meta { font-size: 12.5px; opacity: .95; position: relative; }
+  .next-rdv-time { font-size: 26px; font-weight: 800; margin-top: 10px; position: relative; }
+  .dash-list-row { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); font-size: 13px; transition: background .15s ease; }
   .dash-list-row:last-child { border-bottom: none; }
-  .dash-list-time { font-weight: 700; width: 52px; flex-shrink: 0; color: var(--ink-soft); font-size: 12px; }
+  .dash-list-row:hover { background: var(--grad-soft-horizontal); }
+  .dash-list-time { font-weight: 700; width: 52px; flex-shrink: 0; color: var(--primary-dark); font-size: 12px; }
   .dash-list-name { font-weight: 700; flex: 1; }
   .dash-list-sub { font-size: 11.5px; color: var(--ink-soft); }
 
   /* ---------- Agenda ---------- */
   .agenda-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-  .view-toggle { display: flex; background: var(--paper); border-radius: 10px; padding: 3px; gap: 2px; }
-  .view-toggle button { border: none; background: none; padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
-  .view-toggle button.active { background: var(--card); color: var(--primary-dark); box-shadow: 0 1px 3px rgba(18,36,47,0.12); }
+  .view-toggle { display: flex; background: var(--grad-soft); border-radius: 10px; padding: 3px; gap: 2px; }
+  .view-toggle button { border: none; background: none; padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 700; color: var(--primary-dark); cursor: pointer; }
+  .view-toggle button.active {
+    background: var(--grad-primary);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(115, 80, 232, 0.35);
+  }
   .date-nav { display: flex; align-items: center; gap: 6px; }
-  .date-nav button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); }
+  .date-nav button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: linear-gradient(135deg, #FFFFFF, #F6F4FC); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--primary-dark); transition: background .15s ease, border-color .15s ease, color .15s ease; }
+  .date-nav button:hover { background: var(--grad-primary); color: #fff; border-color: transparent; }
   .date-nav-label { font-size: 13.5px; font-weight: 700; padding: 0 4px; min-width: 150px; text-align: center; }
 
   .pro-filter-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 18px; }
-  .pro-chip { display: flex; align-items: center; gap: 9px; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 14px 8px 8px; cursor: pointer; flex-shrink: 0; transition: border-color .15s ease, background .15s ease; }
-  .pro-chip.active { border-color: var(--primary); background: var(--primary-tint); }
+  .pro-chip { display: flex; align-items: center; gap: 9px; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 14px 8px 8px; cursor: pointer; flex-shrink: 0; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+  .pro-chip.active {
+    border-color: var(--primary);
+    background: var(--grad-soft);
+    box-shadow: 0 6px 16px rgba(115, 80, 232, 0.2);
+  }
   .pro-chip-name { font-size: 12.5px; font-weight: 700; line-height: 1.3; }
   .pro-chip-role { font-size: 10.5px; color: var(--ink-soft); }
   .pro-chip-dot { width: 8px; height: 8px; border-radius: 50%; margin-left: 4px; }
@@ -790,7 +2009,7 @@ export default function AdminDashboard() {
   @media (max-width: 1100px) { .agenda-body { grid-template-columns: 1fr; } }
 
   .day-grid { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-  .day-grid-head { display: grid; border-bottom: 1px solid var(--line); }
+  .day-grid-head { display: grid; border-bottom: 1px solid var(--line); background: var(--grad-soft-vertical); }
   .day-col-head { padding: 12px 10px; text-align: center; border-left: 1px solid var(--line); }
   .day-col-head:first-child { border-left: none; }
   .day-col-head-name { font-size: 12.5px; font-weight: 700; }
@@ -798,29 +2017,31 @@ export default function AdminDashboard() {
   .day-grid-body { display: grid; position: relative; }
   .day-hour-row { display: contents; }
   .hour-label { font-size: 10.5px; color: var(--ink-soft); padding: 2px 8px 0 0; text-align: right; border-top: 1px solid var(--line); position: relative; top: -6px; }
-  .day-col { border-left: 1px solid var(--line); border-top: 1px solid var(--line); min-height: 46px; position: relative; cursor: pointer; }
-  .day-col:hover { background: var(--paper); }
+  .day-col { border-left: 1px solid var(--line); border-top: 1px solid var(--line); min-height: 46px; position: relative; cursor: pointer; transition: background .15s ease; }
+  .day-col:hover { background: var(--grad-soft); }
   .appt-block {
     position: absolute; left: 4px; right: 4px; border-radius: 8px; padding: 5px 7px; overflow: hidden;
-    font-size: 11px; cursor: pointer; border-left: 3px solid; box-shadow: 0 2px 6px rgba(18,36,47,0.08);
+    font-size: 11px; cursor: pointer; border-left: 3px solid;
+    box-shadow: 0 4px 10px rgba(115, 80, 232, 0.2);
     transition: transform .1s ease, box-shadow .1s ease; z-index: 2;
   }
-  .appt-block:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(18,36,47,0.18); z-index: 3; }
+  .appt-block:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(115, 80, 232, 0.32); z-index: 3; }
   .appt-block b { display: block; font-size: 11.5px; line-height: 1.3; }
   .appt-block span { display: block; opacity: .85; font-size: 10px; }
   .appt-dragging { opacity: .5; }
-  .day-col.drop-hover { background: var(--primary-tint); }
+  .day-col.drop-hover { background: var(--grad-soft); }
 
-  .mini-cal { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
-  .mini-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; font-weight: 700; }
-  .mini-cal-head button { border: none; background: var(--paper); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; color: var(--ink-soft); }
+  .mini-cal { background: var(--card); border: 1.5px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .mini-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; font-weight: 700; color: var(--primary-dark); }
+  .mini-cal-head button { border: none; background: var(--grad-soft); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; color: var(--primary-dark); }
+  .mini-cal-head button:hover { background: var(--grad-primary); color: #fff; }
   .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; }
-  .mini-cal-dow { font-size: 10px; font-weight: 700; color: var(--ink-soft); padding-bottom: 4px; }
+  .mini-cal-dow { font-size: 10px; font-weight: 700; color: var(--primary-dark); padding-bottom: 4px; }
   .mini-cal-day { font-size: 11.5px; padding: 6px 0; border-radius: 7px; cursor: pointer; color: var(--ink); }
-  .mini-cal-day:hover { background: var(--paper); }
+  .mini-cal-day:hover { background: var(--grad-soft); }
   .mini-cal-day.muted { color: #C7C2D6; }
-  .mini-cal-day.today { border: 1.5px solid var(--primary); font-weight: 700; }
-  .mini-cal-day.selected { background: var(--primary); color: #fff; font-weight: 700; }
+  .mini-cal-day.today { border: 1.5px solid var(--primary); font-weight: 700; color: var(--primary-dark); }
+  .mini-cal-day.selected { background: var(--grad-primary); color: #fff; font-weight: 700; box-shadow: 0 4px 12px rgba(115, 80, 232, 0.4); }
   .mini-cal-day.has-appt::after { content: ""; display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--primary); margin: 2px auto 0; }
   .mini-cal-day.selected.has-appt::after { background: #fff; }
 
@@ -831,33 +2052,68 @@ export default function AdminDashboard() {
   /* week/month simplified views */
   .week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
   .week-day-col { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 220px; }
+  .week-day-col:hover { border-color: var(--primary-light); }
   .week-day-head { font-size: 11.5px; font-weight: 700; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); text-align: center; }
   .week-day-head.today { color: var(--primary-dark); }
   .week-appt-chip { font-size: 10.5px; padding: 5px 7px; border-radius: 7px; margin-bottom: 5px; border-left: 3px solid; cursor: pointer; }
   .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
   .month-dow { font-size: 11px; font-weight: 700; color: var(--ink-soft); text-align: center; padding-bottom: 4px; }
-  .month-cell { background: var(--card); border: 1px solid var(--line); border-radius: 10px; min-height: 84px; padding: 6px 8px; cursor: pointer; font-size: 11.5px; }
-  .month-cell:hover { border-color: var(--primary); }
+  .month-cell { background: var(--card); border: 1px solid var(--line); border-radius: 10px; min-height: 84px; padding: 6px 8px; cursor: pointer; font-size: 11.5px; transition: border-color .15s ease, box-shadow .15s ease; }
+  .month-cell:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(115, 80, 232, 0.15); }
   .month-cell.muted { opacity: .4; }
   .month-cell.today { border-color: var(--primary); border-width: 1.5px; }
   .month-cell-num { font-weight: 700; margin-bottom: 4px; }
-  .month-cell-count { display: inline-block; background: var(--primary-tint); color: var(--primary-dark); font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
+  .month-cell-count {
+    display: inline-block;
+    background: var(--grad-primary);
+    color: #fff; font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border-radius: 999px;
+  }
 
   /* ---------- Tables ---------- */
   .filter-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-  .filter-row select, .filter-row input { border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; font-size: 12.5px; background: var(--card); color: var(--ink); }
+  .filter-row select, .filter-row input {
+    border: 1.5px solid var(--line); border-radius: 9px;
+    padding: 8px 12px; font-size: 12.5px;
+    background: linear-gradient(135deg, #FFFFFF, #FBFAFF);
+    color: var(--ink);
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .filter-row select:focus, .filter-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(115, 80, 232, 0.18); background: #fff; }
   table.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.data-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); font-weight: 700; padding: 10px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.data-table th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--primary-dark); font-weight: 800;
+    padding: 12px 16px;
+    border-bottom: 1.5px solid var(--line); white-space: nowrap;
+    background: var(--grad-primary);
+    color: #fff;
+  }
+  table.data-table th:first-child { border-top-left-radius: 0; }
+  table.data-table th:last-child { border-top-right-radius: 0; }
   table.data-table td { padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   table.data-table tr:last-child td { border-bottom: none; }
   table.data-table tr.row-clickable { cursor: pointer; transition: background .12s ease; }
-  table.data-table tr.row-clickable:hover { background: var(--paper); }
+  table.data-table tr.row-clickable:hover { background: var(--grad-soft-horizontal); }
   .cell-client { display: flex; align-items: center; gap: 10px; }
   .cell-client-name { font-weight: 700; }
   .cell-client-sub { font-size: 11px; color: var(--ink-soft); }
   .row-actions { display: flex; gap: 6px; }
-  .icon-btn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); }
-  .icon-btn:hover { background: var(--paper); color: var(--ink); }
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 8px;
+    border: 1px solid var(--line);
+    background: linear-gradient(135deg, #FFFFFF, #F6F4FC);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    color: var(--primary-dark);
+    transition: background .15s ease, color .15s ease, border-color .15s ease, transform .12s ease, box-shadow .15s ease;
+  }
+  .icon-btn:hover {
+    background: var(--grad-primary);
+    color: #fff;
+    border-color: transparent;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(115, 80, 232, 0.35);
+  }
   .repeat-warning { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: var(--st-annule); background: #FDEDEC; padding: 2px 8px; border-radius: 999px; margin-left: 6px; }
 
   .table-empty { padding: 40px 20px; text-align: center; color: var(--ink-soft); font-size: 13px; }
@@ -865,45 +2121,79 @@ export default function AdminDashboard() {
   /* ---------- Notifications ---------- */
   .notif-row { display: flex; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); align-items: flex-start; }
   .notif-row:last-child { border-bottom: none; }
-  .notif-row.unread { background: #FBFAFF; }
+  .notif-row.unread { background: var(--grad-soft-horizontal); }
   .notif-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .notif-text { font-size: 12.5px; line-height: 1.5; }
   .notif-text b { font-weight: 700; }
   .notif-time { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
-  .notif-dot-unread { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); margin-left: auto; margin-top: 6px; flex-shrink: 0; }
+  .notif-dot-unread {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--grad-primary);
+    margin-left: auto; margin-top: 6px; flex-shrink: 0;
+    box-shadow: 0 0 10px rgba(115, 80, 232, 0.8);
+  }
 
   /* ---------- Modals ---------- */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(27,23,48,0.5); backdrop-filter: blur(2px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; transition: opacity .2s ease; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(58, 32, 144, 0.55); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; transition: opacity .2s ease; }
   .modal-overlay.open { opacity: 1; }
-  .modal-box { width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto; background: var(--card); border-radius: 18px; box-shadow: 0 40px 80px -20px rgba(10,10,26,0.5); padding: 24px 26px; transform: translateY(14px) scale(.98); transition: transform .22s ease; }
+  .modal-box {
+    width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto;
+    background: var(--card); border-radius: 18px;
+    box-shadow: 0 40px 80px -20px rgba(58, 30, 130, 0.55), 0 0 0 1px rgba(155,124,242,0.15);
+    padding: 24px 26px; transform: translateY(14px) scale(.98);
+    transition: transform .22s ease;
+    border-top: 4px solid transparent;
+    background-image: linear-gradient(var(--card), var(--card)), var(--grad-primary);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+  }
   .modal-overlay.open .modal-box { transform: translateY(0) scale(1); }
   .modal-box.wide { max-width: 640px; }
-  .modal-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
-  .modal-title { font-size: 17px; font-weight: 800; margin: 0 0 2px; }
+  .modal-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .modal-title { font-size: 17px; font-weight: 800; margin: 0 0 2px; color: var(--primary-dark); }
   .modal-sub { font-size: 12px; color: var(--ink-soft); margin: 0; }
-  .modal-close { border: none; background: var(--paper); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; color: var(--ink-soft); font-size: 16px; flex-shrink: 0; }
+  .modal-close { border: none; background: var(--grad-soft); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; color: var(--primary-dark); font-size: 16px; flex-shrink: 0; transition: background .15s ease, color .15s ease; }
+  .modal-close:hover { background: var(--grad-primary); color: #fff; }
   .field-row { margin-bottom: 13px; }
-  .field-row label { display: block; font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-bottom: 5px; }
-  .field-row input, .field-row select, .field-row textarea { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; font-size: 13px; color: var(--ink); background: var(--paper); }
-  .field-row input:focus, .field-row select:focus, .field-row textarea:focus { outline: none; border-color: var(--primary); }
+  .field-row label { display: block; font-size: 12px; font-weight: 700; color: var(--primary-dark); margin-bottom: 5px; }
+  .field-row input, .field-row select, .field-row textarea {
+    width: 100%; border: 1.5px solid var(--line); border-radius: 9px;
+    padding: 9px 12px; font-size: 13px; color: var(--ink);
+    background: linear-gradient(135deg, #FBFAFF, #F4EFFF);
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .field-row input:focus, .field-row select:focus, .field-row textarea:focus {
+    outline: none; border-color: var(--primary); background: #fff;
+    box-shadow: 0 0 0 3px rgba(115, 80, 232, 0.18);
+  }
   .field-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .field-hint { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
   .field-error { font-size: 11.5px; color: var(--st-annule); margin-top: 4px; display: none; }
   .field-error.show { display: block; }
-  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-  .detect-banner { background: var(--primary-tint); color: var(--primary-dark); font-size: 12px; font-weight: 600; padding: 10px 13px; border-radius: 10px; margin-bottom: 14px; display: none; align-items: center; gap: 8px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .detect-banner { background: var(--grad-soft); color: var(--primary-dark); font-size: 12px; font-weight: 600; padding: 10px 13px; border-radius: 10px; margin-bottom: 14px; display: none; align-items: center; gap: 8px; }
   .detect-banner.show { display: flex; }
 
   .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; margin-bottom: 16px; }
-  .detail-item-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); margin-bottom: 3px; }
+  .detail-item-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--primary-dark); margin-bottom: 3px; }
   .detail-item-value { font-size: 13.5px; font-weight: 600; }
   .status-menu { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
   .status-menu button { border: 1.5px solid var(--line); background: var(--card); border-radius: 9px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; color: var(--ink-soft); }
-  .status-menu button.current { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-tint); }
-  .modal-tabs { display: flex; gap: 6px; margin-bottom: 16px; background: var(--paper); border-radius: 10px; padding: 3px; }
+  .status-menu button.current { border-color: var(--primary); color: var(--primary-dark); background: var(--grad-soft); }
+  .modal-tabs { display: flex; gap: 6px; margin-bottom: 16px; background: var(--grad-soft); border-radius: 10px; padding: 3px; }
   .modal-tabs button { flex: 1; border: none; background: none; padding: 8px; border-radius: 8px; font-size: 12px; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
-  .modal-tabs button.active { background: var(--card); color: var(--primary-dark); box-shadow: 0 1px 3px rgba(18,36,47,0.12); }
-  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--ink); color: #fff; font-size: 13px; font-weight: 600; padding: 12px 20px; border-radius: 10px; z-index: 200; opacity: 0; transition: opacity .25s ease, transform .25s ease; box-shadow: 0 20px 40px -14px rgba(0,0,0,.4); display: flex; align-items: center; gap: 8px; }
+  .modal-tabs button.active { background: var(--card); color: var(--primary-dark); box-shadow: 0 1px 3px rgba(115, 80, 232, 0.2); }
+  .toast {
+    position: fixed; bottom: 26px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--grad-primary-deep);
+    color: #fff; font-size: 13px; font-weight: 600; padding: 12px 20px;
+    border-radius: 10px; z-index: 200; opacity: 0;
+    transition: opacity .25s ease, transform .25s ease;
+    box-shadow: 0 20px 40px -14px rgba(115, 80, 232, 0.6);
+    display: flex; align-items: center; gap: 8px;
+    border-left: 4px solid #E9E3FF;
+  }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   @media (max-width: 720px) {
@@ -912,7 +2202,6 @@ export default function AdminDashboard() {
     .field-2col { grid-template-columns: 1fr; }
     .detail-grid { grid-template-columns: 1fr; }
   }
-
       `}</style>
   <div className="app">
     
@@ -958,10 +2247,22 @@ export default function AdminDashboard() {
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           <span className="nav-label">Agendas</span>
         </div>
+        <div className="nav-item" data-page="absences">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span className="nav-label">Absences</span>
+        </div>
         <div className="sb-section-title">Plateforme</div>
+        <div className="nav-item" data-page="domaines">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          <span className="nav-label">Domaines d&apos;activité</span>
+        </div>
         <div className="nav-item" data-page="params">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <span className="nav-label">Paramètres généraux</span>
+        </div>
+        <div className="nav-item" data-page="audit">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <span className="nav-label">Journal d&apos;audit</span>
         </div>
         <div className="nav-item" data-page="notifs">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
@@ -973,7 +2274,7 @@ export default function AdminDashboard() {
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="collapseIcon"><polyline points="15 18 9 12 15 6"/></svg>
         <span className="nav-label">Réduire le menu</span>
       </button>
-      <button className="sb-collapse-btn" id="logoutBtn" style={{ marginTop: 6, color: '#D9483C' }}>
+      <button className="sb-collapse-btn" id="logoutBtn" style={{ marginTop: 6, color: '#FFD9D5', borderColor: 'rgba(255,217,213,0.35)' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         <span className="nav-label">Déconnexion</span>
       </button>
@@ -992,8 +2293,8 @@ export default function AdminDashboard() {
             <span className="tb-icon-dot" id="tbNotifDot">0</span>
           </button>
           <div className="tb-user">
-            <div className="tb-avatar" style={{background: 'linear-gradient(135deg,#1B1730,#4A4460)'}}>AG</div>
-            <div className="tb-user-text"><div className="tb-user-name">Admin général</div><div className="tb-user-role">Administrateur</div></div>
+            <div className="tb-avatar">{(account?.email || '?').slice(0, 2).toUpperCase()}</div>
+            <div className="tb-user-text"><div className="tb-user-name">{account?.email || '—'}</div><div className="tb-user-role">Administrateur</div></div>
           </div>
         </div>
       </header>
@@ -1006,7 +2307,10 @@ export default function AdminDashboard() {
       <section className="page" id="page-rdv"></section>
       <section className="page" id="page-services"></section>
       <section className="page" id="page-agendas"></section>
+      <section className="page" id="page-absences"></section>
+      <section className="page" id="page-domaines"></section>
       <section className="page" id="page-params"></section>
+      <section className="page" id="page-audit"></section>
       <section className="page" id="page-notifs"></section>
     </div>
   </div>
