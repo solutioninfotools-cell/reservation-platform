@@ -25,7 +25,7 @@ export class ReceptionnisteController {
 
   @Get('moi')
   moi(@CurrentUser() user: any) {
-    return this.rec.profilComplet(user.userId);
+    return this.receptionnisteService.profilComplet(user.userId);
   }
 
   @Get('affectations')

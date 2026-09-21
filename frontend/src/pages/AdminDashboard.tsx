@@ -184,6 +184,20 @@ export default function AdminDashboard() {
   document.getElementById("collapseBtn").addEventListener("click", () => document.getElementById("sidebar").classList.toggle("collapsed"), { signal: ac.signal });
   document.getElementById("notifBellBtn").addEventListener("click", () => goToPage("notifs"), { signal: ac.signal });
 
+  const profileBtn = document.getElementById("profileBtn");
+  const profileMenu = document.getElementById("profileMenu");
+  profileBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    profileMenu?.classList.toggle("show");
+    profileBtn.classList.toggle("open");
+  }, { signal: ac.signal });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#profileBtn") && !e.target.closest("#profileMenu")) {
+      profileMenu?.classList.remove("show");
+      profileBtn?.classList.remove("open");
+    }
+  }, { signal: ac.signal });
+
   window.renderPage = function renderPage(page) {
     if (page === "dashboard") renderDashboard();
     else if (page === "pros") renderProsPage();
@@ -1731,7 +1745,7 @@ export default function AdminDashboard() {
     pointer-events: none;
   }
   .sidebar.collapsed { width: 76px; }
-  .sb-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; position: relative; z-index: 1; }
+  .sb-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; position: relative; z-index: 1; flex-shrink: 0; }
   .sb-logo {
     width: 34px; height: 34px; border-radius: 10px;
     background: linear-gradient(135deg, #E9E3FF 0%, #9B7CF2 100%);
@@ -1740,8 +1754,33 @@ export default function AdminDashboard() {
     font-weight: 900; font-size: 16px; flex-shrink: 0;
     box-shadow: 0 6px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.6);
   }
-  .sb-brand-text { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; color: #fff; }
+  .sb-brand-text { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; color: #fff; flex: 1; }
   .sidebar.collapsed .sb-brand-text, .sidebar.collapsed .nav-label, .sidebar.collapsed .sb-section-title { display: none; }
+  .sidebar.collapsed .sb-logo { display: none; }
+  .sidebar.collapsed .sb-brand { justify-content: center; }
+
+  .sb-collapse-arrow {
+    width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; position: relative; z-index: 1;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .sb-collapse-arrow:hover { background: rgba(255,255,255,0.28); border-color: rgba(255,255,255,0.45); }
+  .sb-collapse-arrow svg { transition: transform .25s ease; }
+  .sidebar.collapsed .sb-collapse-arrow svg { transform: rotate(180deg); }
+
+  .sb-nav {
+    flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    display: block; position: relative;
+    scrollbar-width: thin;
+  }
+  .sb-nav::-webkit-scrollbar { width: 5px; }
+  .sb-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.28); border-radius: 999px; }
+  .sb-nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.45); }
+  .sb-nav::-webkit-scrollbar-track { background: transparent; }
 
   .sb-section-title {
     font-size: 10.5px; font-weight: 700; color: rgba(233,227,255,0.72);
@@ -1780,21 +1819,6 @@ export default function AdminDashboard() {
   }
   .nav-item.active .nav-badge { background: var(--primary-dark); color: #E9E3FF; }
   .sidebar.collapsed .nav-badge { position: absolute; top: 4px; right: 4px; margin-left: 0; padding: 1px 5px; }
-
-  .sb-collapse-btn {
-    margin-top: auto; display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px; border-radius: 11px;
-    color: rgba(255,255,255,0.9); font-size: 12.5px; font-weight: 600;
-    cursor: pointer; border: 1px solid rgba(233,227,255,0.3);
-    background: linear-gradient(135deg, rgba(233,227,255,0.15), rgba(155,124,242,0.18));
-    position: relative; z-index: 1;
-    transition: background .15s ease, color .15s ease, border-color .15s ease;
-  }
-  .sb-collapse-btn:hover {
-    background: linear-gradient(135deg, rgba(233,227,255,0.28), rgba(155,124,242,0.35));
-    border-color: rgba(233,227,255,0.55);
-    color: #fff;
-  }
 
   /* ---------- Main / Topbar ---------- */
   .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -1844,7 +1868,27 @@ export default function AdminDashboard() {
     border: 2px solid var(--card);
     box-shadow: 0 3px 8px rgba(217, 72, 60, 0.4);
   }
-  .tb-user { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .tb-profile-wrap { position: relative; }
+  .tb-user { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px 6px 6px; border-radius: 12px; transition: background .15s ease; }
+  .tb-user:hover, .tb-user.open { background: var(--primary-soft); }
+  .tb-user-caret { color: var(--primary-dark); flex-shrink: 0; transition: transform .2s ease; }
+  .tb-user.open .tb-user-caret { transform: rotate(180deg); }
+
+  .profile-menu { display: none; position: absolute; top: calc(100% + 10px); right: 0; min-width: 250px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 20px 40px -12px rgba(115,80,232,0.28); padding: 8px; z-index: 200; }
+  .profile-menu.show { display: block; }
+  .profile-menu-head { display: flex; align-items: center; gap: 12px; padding: 14px 14px 16px; border-bottom: 1px solid var(--line); margin: -8px -8px 6px; background: var(--grad-soft); border-radius: 10px 10px 0 0; }
+  .profile-menu-info { min-width: 0; flex: 1; }
+  .profile-menu-info strong { display: block; font-size: 13.5px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+  .profile-menu-info span { display: block; font-size: 11.5px; color: var(--ink-soft); }
+  .profile-menu-item { width: 100%; display: flex; align-items: center; gap: 11px; padding: 10px 12px; border: none; background: transparent; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; text-align: left; transition: background .15s ease, color .15s ease; }
+  .profile-menu-item svg { color: var(--ink-soft); flex-shrink: 0; transition: color .15s ease; }
+  .profile-menu-item:hover { background: var(--primary-soft); color: var(--primary-dark); }
+  .profile-menu-item:hover svg { color: var(--primary-dark); }
+  .profile-menu-item.danger { color: var(--st-annule); }
+  .profile-menu-item.danger svg { color: var(--st-annule); }
+  .profile-menu-item.danger:hover { background: #FDEDEC; color: #C0362B; }
+  .profile-menu-item.danger:hover svg { color: #C0362B; }
+
   .tb-avatar {
     width: 38px; height: 38px; border-radius: 50%;
     background: var(--grad-avatar);
@@ -2209,8 +2253,11 @@ export default function AdminDashboard() {
       <div className="sb-brand">
         <div className="sb-logo">R</div>
         <div className="sb-brand-text">RendezVousApp</div>
+        <button className="sb-collapse-arrow" id="collapseBtn" title="Réduire / étendre le menu">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" id="collapseIcon"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
       </div>
-      <nav>
+      <nav className="sb-nav">
         <div className="nav-item active" data-page="dashboard">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
           <span className="nav-label">Tableau de bord</span>
@@ -2270,14 +2317,6 @@ export default function AdminDashboard() {
           <span className="nav-badge" id="navNotifBadge">0</span>
         </div>
       </nav>
-      <button className="sb-collapse-btn" id="collapseBtn">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="collapseIcon"><polyline points="15 18 9 12 15 6"/></svg>
-        <span className="nav-label">Réduire le menu</span>
-      </button>
-      <button className="sb-collapse-btn" id="logoutBtn" style={{ marginTop: 6, color: '#FFD9D5', borderColor: 'rgba(255,217,213,0.35)' }}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        <span className="nav-label">Déconnexion</span>
-      </button>
     </aside>
 
     
@@ -2292,9 +2331,25 @@ export default function AdminDashboard() {
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
             <span className="tb-icon-dot" id="tbNotifDot">0</span>
           </button>
-          <div className="tb-user">
-            <div className="tb-avatar">{(account?.email || '?').slice(0, 2).toUpperCase()}</div>
-            <div className="tb-user-text"><div className="tb-user-name">{account?.email || '—'}</div><div className="tb-user-role">Administrateur</div></div>
+          <div className="tb-profile-wrap">
+            <div className="tb-user" id="profileBtn">
+              <div className="tb-avatar">{(account?.email || '?').slice(0, 2).toUpperCase()}</div>
+              <div className="tb-user-text"><div className="tb-user-name">{account?.email || '—'}</div><div className="tb-user-role">Administrateur</div></div>
+              <svg className="tb-user-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div className="profile-menu" id="profileMenu">
+              <div className="profile-menu-head">
+                <div className="tb-avatar" style={{ width: 42, height: 42, fontSize: 14 }}>{(account?.email || '?').slice(0, 2).toUpperCase()}</div>
+                <div className="profile-menu-info">
+                  <strong>{account?.email || '—'}</strong>
+                  <span>Administrateur</span>
+                </div>
+              </div>
+              <button className="profile-menu-item danger" id="logoutBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                Déconnexion
+              </button>
+            </div>
           </div>
         </div>
       </header>
