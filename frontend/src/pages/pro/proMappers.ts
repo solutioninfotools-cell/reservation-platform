@@ -336,11 +336,8 @@ export function messageErreur(err: any, defaut = 'Une erreur est survenue.'): st
 /**
  * Résout l'adresse d'une image renvoyée par l'API.
  *
- * Le serveur ne stocke qu'un chemin relatif (`/uploads/…`) : une URL absolue
- * enregistrée en base deviendrait fausse au premier changement de domaine.
- * C'est donc ici, côté client, qu'on la résout contre l'origine de l'API.
  * Une adresse déjà complète (image hébergée ailleurs, `data:`) passe telle
- * quelle — les services créés avant le téléversement en gardent une.
+ * quelle. Les anciens chemins relatifs sont résolus contre l'origine de l'API.
  */
 export function urlImage(chemin?: string | null): string {
   const v = (chemin ?? '').trim();

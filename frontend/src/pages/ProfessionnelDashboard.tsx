@@ -60,7 +60,6 @@ export default function ProfessionnelDashboard() {
       { value: "checkbox", label: "Cases à cocher" },
       { value: "switch", label: "Oui / Non" },
       { value: "date", label: "Date" },
-      { value: "fichier", label: "Upload fichier / photo" },
     ];
     const HAS_OPTIONS_TYPES = ["liste", "radio", "checkbox"];
 
@@ -325,7 +324,6 @@ export default function ProfessionnelDashboard() {
        ========================================================= */
     window.svg = function svg(inner, w) { w = w || 15; return `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`; }
     window.iconPlus = function iconPlus() { return svg('<path d="M12 5v14M5 12h14"/>'); }
-    window.iconImage = function iconImage() { return svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>', 14); }
     window.iconCal = function iconCal() { return svg('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>'); }
     window.iconCheck = function iconCheck() { return svg('<polyline points="20 6 9 17 4 12"/>'); }
     window.iconCheckCircle = function iconCheckCircle() { return svg('<circle cx="12" cy="12" r="9"/><polyline points="8 12 11 15 16 9"/>'); }
@@ -1382,13 +1380,11 @@ export default function ProfessionnelDashboard() {
           <div class="img-choix">
             <div class="img-apercu vide" id="svImageApercu"></div>
             <div class="img-choix-actions">
-              <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('svImageFile').click()">${iconImage()} Choisir une image</button>
               <button type="button" class="btn btn-ghost btn-sm" onclick="retirerImageService()">Retirer</button>
             </div>
           </div>
-          <input type="file" id="svImageFile" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="televerserImageService(this)" />
-          <input type="url" id="svImage" value="${v.imageUrl}" placeholder="https://… ou choisissez un fichier" oninput="rafraichirApercuService()" />
-          <div class="field-hint">JPEG, PNG, WebP ou GIF, 4 Mo maximum. Vous pouvez aussi coller l'adresse d'une image hébergée ailleurs.</div>
+          <input type="url" id="svImage" value="${v.imageUrl}" placeholder="https://…" oninput="rafraichirApercuService()" />
+          <div class="field-hint">Collez l'adresse d'une image hébergée ailleurs.</div>
         </div>
       </div>
       <div id="svTabChamps" style="display:${tab === 'champs' ? 'block' : 'none'}">
@@ -1421,32 +1417,6 @@ export default function ProfessionnelDashboard() {
       img.addEventListener("load", () => boite.classList.remove("cassee"));
       img.src = M.urlImage(adresse);
       boite.appendChild(img);
-    }
-
-    /**
-     * Téléverse le fichier choisi et renseigne l'adresse renvoyée par le serveur.
-     * La taille est contrôlée avant l'envoi : inutile de faire monter 20 Mo pour
-     * se faire refuser à l'arrivée.
-     */
-    window.televerserImageService = async function televerserImageService(champFichier) {
-      const fichier = champFichier.files && champFichier.files[0];
-      champFichier.value = "";           // pour pouvoir re-choisir le même fichier
-      if (!fichier) return;
-      if (fichier.size > 4 * 1024 * 1024) { showToast("Image trop lourde : 4 Mo maximum"); return; }
-
-      const boite = document.getElementById("svImageApercu");
-      boite?.classList.add("chargement");
-      try {
-        const { url } = await professionnelApi.uploadImage(fichier);
-        const champ = document.getElementById("svImage");
-        if (champ) champ.value = url;
-        rafraichirApercuService();
-        showToast("Image ajoutée");
-      } catch (err) {
-        showToast(M.messageErreur(err, "Le téléversement de l'image a échoué."));
-      } finally {
-        boite?.classList.remove("chargement");
-      }
     }
 
     window.retirerImageService = function retirerImageService() {
@@ -2280,7 +2250,7 @@ export default function ProfessionnelDashboard() {
         <div class="field-row">
           <label>Photo du bureau</label>
           <input type="url" id="prPhoto" value="${PROFILE.photoUrl || ""}" placeholder="https://…" />
-          <div class="field-hint">Adresse de l'image. Le téléversement direct nécessitera un service de stockage de fichiers.</div>
+          <div class="field-hint">Collez l'adresse d'une image hébergée ailleurs.</div>
         </div>
         ${PROFILE.photoUrl ? `<img src="${PROFILE.photoUrl}" alt="Photo du bureau" style="max-width:220px;border-radius:10px;border:1px solid var(--line);margin-bottom:14px;" />` : ""}
         <button class="btn btn-primary" onclick="saveProfile()">${iconCheck()} Enregistrer les modifications</button>
@@ -2639,7 +2609,6 @@ export default function ProfessionnelDashboard() {
       delete (window as any).publishProfile;
       delete (window as any).svg;
       delete (window as any).iconPlus;
-      delete (window as any).iconImage;
       delete (window as any).iconCal;
       delete (window as any).iconCheck;
       delete (window as any).iconCheckCircle;
@@ -2726,7 +2695,6 @@ export default function ProfessionnelDashboard() {
       delete (window as any).capturerBrouillonService;
       delete (window as any).openServiceForm;
       delete (window as any).rafraichirApercuService;
-      delete (window as any).televerserImageService;
       delete (window as any).retirerImageService;
       delete (window as any).switchServiceTab;
       delete (window as any).cfFieldLabel;

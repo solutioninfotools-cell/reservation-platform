@@ -15,7 +15,6 @@ import { EmailModule } from './email/email.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { ClientsModule } from './clients/clients.module';
-import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -35,7 +34,6 @@ import { UploadsModule } from './uploads/uploads.module';
     AppointmentsModule,
     PublicModule,
     AssistantModule,
-    UploadsModule,
   ],
 })
 export class AppModule {}

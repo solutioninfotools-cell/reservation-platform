@@ -435,16 +435,31 @@ export class ProfessionnelService {
   // ---------------- Clients (CDC II.11) ----------------
   async listClients(professionnelId: string, search?: string) {
     const clients = await this.clients.listForProfessionnel(professionnelId, search);
+    if (!clients.length) return [];
+
     const params = await this.prisma.parametresReservation.findUnique({ where: { professionnelId } });
     const seuil = params?.seuilAbsences ?? 2;
 
-    // Avertissement « absences répétées » (CDC II.15bis / IV.14), purement informatif.
-    return Promise.all(
-      clients.map(async (c: any) => {
-        const absences = await this.clients.absenceCount(c.id, professionnelId);
-        return { ...c, absences, absencesRepetees: absences >= seuil };
-      }),
-    );
+    const clientIds = clients.map((c: any) => c.id);
+    const absencesGrouped = await this.prisma.rendezVous.groupBy({
+      by: ['clientId'],
+      where: {
+        professionnelId,
+        clientId: { in: clientIds },
+        statut: 'ABSENT',
+      },
+      _count: { _all: true },
+    });
+
+    const absenceMap = new Map<string, number>();
+    for (const g of absencesGrouped) {
+      absenceMap.set(g.clientId, g._count._all);
+    }
+
+    return clients.map((c: any) => {
+      const absences = absenceMap.get(c.id) ?? 0;
+      return { ...c, absences, absencesRepetees: absences >= seuil };
+    });
   }
 
   async updateClient(userId: string, clientId: string, dto: UpdateClientDto) {

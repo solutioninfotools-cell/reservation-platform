@@ -6,17 +6,6 @@ import { api } from './client';
  * navigateur.
  */
 export const professionnelApi = {
-  /**
-   * Téléverse une image et renvoie son chemin relatif (`/uploads/…`).
-   * Axios pose lui-même la frontière multipart : on ne fixe surtout pas
-   * Content-Type à la main, sinon le boundary manque et le serveur refuse.
-   */
-  uploadImage: (fichier: File) => {
-    const corps = new FormData();
-    corps.append('file', fichier);
-    return api.post('/uploads/image', corps).then((r) => r.data as { url: string });
-  },
-
   moi: () => api.get('/professionnel/moi').then((r) => r.data),
   updateProfil: (data: any) => api.patch('/professionnel/profil', data).then((r) => r.data),
 

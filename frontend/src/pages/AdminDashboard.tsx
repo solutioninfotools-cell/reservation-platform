@@ -494,7 +494,7 @@ export default function AdminDashboard() {
         <div class="field-row"><label>Horaires généraux par défaut</label><input type="text" id="plHoraires" value="${PLATFORM.horaires}" /></div>
         <div class="field-row"><label>Slogan principal</label><input type="text" id="plSlogan" value="${PLATFORM.slogan}" placeholder="Votre rendez-vous, simplifié." /></div>
         <div class="field-row"><label>Conditions de réservation</label><textarea id="plConditions" rows="2">${PLATFORM.conditions}</textarea></div>
-        <div class="field-row"><label>Logo</label><div style="border:1.5px dashed var(--line);border-radius:10px;padding:18px;text-align:center;font-size:12px;color:var(--ink-soft);">Glissez une image ou cliquez pour téléverser</div></div>
+        <div class="field-row"><label>Logo</label><input type="url" id="plLogo" value="${PLATFORM.logo}" placeholder="https://…" /><div class="field-hint">Collez l'adresse d'une image hébergée ailleurs.</div></div>
         <button class="btn btn-primary" onclick="savePlatform()">${iconCheck()} Enregistrer</button>
       </div>
       <div class="card" style="padding:22px;max-width:640px;margin-top:18px;">
@@ -509,6 +509,7 @@ export default function AdminDashboard() {
     PLATFORM.desc = document.getElementById("plDesc").value;
     PLATFORM.phone = document.getElementById("plPhone").value;
     PLATFORM.email = document.getElementById("plEmail").value;
+    PLATFORM.logo = document.getElementById("plLogo").value;
     PLATFORM.address = document.getElementById("plAddress").value;
     PLATFORM.horaires = document.getElementById("plHoraires").value;
     PLATFORM.slogan = document.getElementById("plSlogan").value;

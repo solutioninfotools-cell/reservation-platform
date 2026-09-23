@@ -4,7 +4,6 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import { assurerDossierUploads } from './uploads/uploads.constants';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -33,12 +32,6 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
   app.setGlobalPrefix('api');
-
-  // Images téléversées (photo d'un service, du bureau…). Servies hors du
-  // préfixe /api : ce sont des fichiers, pas des points d'entrée d'API.
-  // `maxAge` autorise le cache navigateur — le nom de chaque fichier est
-  // unique, une image ne change donc jamais de contenu sous la même adresse.
-  app.useStaticAssets(assurerDossierUploads(), { prefix: '/uploads', maxAge: '7d' });
 
   const config = new DocumentBuilder()
     .setTitle('RendezVousApp API')
