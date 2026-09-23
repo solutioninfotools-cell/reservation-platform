@@ -2,13 +2,22 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  if (!process.env.JWT_SECRET) {
+    throw new Error(
+      'JWT_SECRET est absent du fichier backend/.env — démarrage interrompu.',
+    );
+  }
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:5173'],
+    origin: process.env.CORS_ORIGIN?.split(',')
+      .map((o) => o.trim())
+      .filter(Boolean) ?? ['http://localhost:5173'],
     credentials: true,
   });
 
@@ -32,7 +41,18 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const port = process.env.PORT ?? 3000;
-  await app.listen(port);
+  try {
+    await app.listen(port);
+  } catch (err: any) {
+    if (err?.code === 'EADDRINUSE') {
+      throw new Error(
+        `Le port ${port} est déjà utilisé par un autre processus. ` +
+          "Arrêtez-le avant de démarrer cette API, sinon le frontend interrogera le mauvais backend. " +
+          `Sous Windows : netstat -ano | findstr :${port} puis taskkill /PID <pid> /F`,
+      );
+    }
+    throw err;
+  }
   // eslint-disable-next-line no-console
   console.log(`RendezVousApp API démarrée sur http://localhost:${port}/api (docs: /api/docs)`);
 }

@@ -1,64 +1,79 @@
 import { api } from './client';
 
 /**
- * Espace Professionnel. Toutes les routes sont scopées côté serveur au
- * professionnel authentifié : aucun identifiant de propriétaire n'est envoyé
- * depuis le frontend, et le backend reste l'unique autorité.
+ * Espace Professionnel — toutes ces routes sont scopées côté serveur au
+ * professionnel authentifié : aucun `professionnelId` n'est transmis depuis le
+ * navigateur.
  */
 export const professionnelApi = {
   moi: () => api.get('/professionnel/moi').then((r) => r.data),
-  updateProfil: (data: Partial<{ nom: string; specialite: string; description: string; adresse: string; telephone: string; photoUrl: string }>) =>
-    api.patch('/professionnel/profil', data).then((r) => r.data),
+  updateProfil: (data: any) => api.patch('/professionnel/profil', data).then((r) => r.data),
 
-  // ---- Services (actif = publié, statut = disponibilité affichée au client) ----
   listServices: () => api.get('/professionnel/services').then((r) => r.data),
-  createService: (data: { nom: string; description?: string; dureeMinutes: number; prix?: number }) =>
-    api.post('/professionnel/services', data).then((r) => r.data),
-  updateService: (
-    id: string,
-    data: Partial<{ nom: string; description: string; dureeMinutes: number; prix: number; actif: boolean; statut: 'DISPONIBLE' | 'COMPLET' | 'INDISPONIBLE' }>,
-  ) => api.patch(`/professionnel/services/${id}`, data).then((r) => r.data),
+  createService: (data: any) => api.post('/professionnel/services', data).then((r) => r.data),
+  updateService: (id: string, data: any) => api.patch(`/professionnel/services/${id}`, data).then((r) => r.data),
   deleteService: (id: string) => api.delete(`/professionnel/services/${id}`).then((r) => r.data),
 
-  // ---- Champs personnalisés d'un service ----
-  listChamps: (serviceId?: string) => api.get('/professionnel/champs', { params: { serviceId } }).then((r) => r.data),
-  createChamp: (data: Record<string, unknown>) => api.post('/professionnel/champs', data).then((r) => r.data),
-  updateChamp: (id: string, data: Record<string, unknown>) => api.patch(`/professionnel/champs/${id}`, data).then((r) => r.data),
-  deleteChamp: (id: string) => api.delete(`/professionnel/champs/${id}`).then((r) => r.data),
+  // Champs personnalisés (constructeur de formulaire par service)
+  listChamps: (serviceId?: string) =>
+    api.get('/professionnel/champs-personnalises', { params: { serviceId } }).then((r) => r.data),
+  createChamp: (data: any) => api.post('/professionnel/champs-personnalises', data).then((r) => r.data),
+  updateChamp: (id: string, data: any) => api.patch(`/professionnel/champs-personnalises/${id}`, data).then((r) => r.data),
+  deleteChamp: (id: string) => api.delete(`/professionnel/champs-personnalises/${id}`).then((r) => r.data),
 
-  // ---- Disponibilités hebdomadaires (jourSemaine : 0 = lundi … 6 = dimanche) ----
   listDisponibilites: () => api.get('/professionnel/disponibilites').then((r) => r.data),
-  addDisponibilite: (data: { jourSemaine: number; heureDebut: string; heureFin: string }) =>
-    api.post('/professionnel/disponibilites', data).then((r) => r.data),
+  addDisponibilite: (data: any) => api.post('/professionnel/disponibilites', data).then((r) => r.data),
+  updateDisponibilite: (id: string, data: any) => api.patch(`/professionnel/disponibilites/${id}`, data).then((r) => r.data),
   removeDisponibilite: (id: string) => api.delete(`/professionnel/disponibilites/${id}`).then((r) => r.data),
 
-  // ---- Absences et fermetures ----
   listIndisponibilites: () => api.get('/professionnel/indisponibilites').then((r) => r.data),
-  addIndisponibilite: (data: { type: 'CRENEAU' | 'JOURNEE' | 'PERIODE'; dateDebut: string; dateFin: string; motif?: string }) =>
-    api.post('/professionnel/indisponibilites', data).then((r) => r.data),
+  addIndisponibilite: (data: any) => api.post('/professionnel/indisponibilites', data).then((r) => r.data),
   removeIndisponibilite: (id: string) => api.delete(`/professionnel/indisponibilites/${id}`).then((r) => r.data),
+  notifierIndisponibilite: (id: string) => api.post(`/professionnel/indisponibilites/${id}/notifier`).then((r) => r.data),
 
-  // ---- Clients et notes internes ----
+  // Agenda
+  listRendezVous: (params?: Record<string, string | undefined>) =>
+    api.get('/professionnel/rendez-vous', { params }).then((r) => r.data),
+  creerRendezVous: (data: any) => api.post('/professionnel/rendez-vous', data).then((r) => r.data),
+  creneaux: (serviceId: string, date: string) =>
+    api.get('/professionnel/creneaux', { params: { serviceId, date } }).then((r) => r.data),
+
+  // Clients + notes internes
   listClients: (search?: string) => api.get('/professionnel/clients', { params: { search } }).then((r) => r.data),
-  listNotes: (clientId?: string) => api.get('/professionnel/notes', { params: { clientId } }).then((r) => r.data),
-  createNote: (clientId: string, texte: string) => api.post('/professionnel/notes', { clientId, texte }).then((r) => r.data),
-  updateNote: (id: string, texte: string) => api.patch(`/professionnel/notes/${id}`, { texte }).then((r) => r.data),
-  deleteNote: (id: string) => api.delete(`/professionnel/notes/${id}`).then((r) => r.data),
+  updateClient: (id: string, data: any) => api.patch(`/professionnel/clients/${id}`, data).then((r) => r.data),
+  detectClient: (params: { telephone?: string; nom?: string; prenom?: string; dateNaissance?: string }) =>
+    api.get('/professionnel/detect-client', { params }).then((r) => r.data),
+  listNotes: (clientId: string) => api.get(`/professionnel/clients/${clientId}/notes`).then((r) => r.data),
+  addNote: (clientId: string, texte: string) =>
+    api.post(`/professionnel/clients/${clientId}/notes`, { texte }).then((r) => r.data),
+  updateNote: (noteId: string, texte: string) => api.patch(`/professionnel/notes/${noteId}`, { texte }).then((r) => r.data),
+  deleteNote: (noteId: string) => api.delete(`/professionnel/notes/${noteId}`).then((r) => r.data),
 
-  // ---- Règles de réservation appliquées par le moteur de créneaux ----
-  getParametres: () => api.get('/professionnel/parametres').then((r) => r.data),
-  updateParametres: (
-    data: Partial<{ intervalleMinutes: number; delaiMinHeures: number; delaiMaxJours: number; seuilAbsences: number; maxRdvParClientParJour: number }>,
-  ) => api.patch('/professionnel/parametres', data).then((r) => r.data),
-
-  // ---- Réceptionnistes affectées et leurs autorisations sur cet espace ----
+  // Équipe
   listReceptionnistes: () => api.get('/professionnel/receptionnistes').then((r) => r.data),
-  updatePermissions: (
-    affectationId: string,
-    data: Partial<{ peutConsulterAgenda: boolean; peutGererRdv: boolean; peutGererPlanning: boolean; peutGererParametres: boolean; actif: boolean }>,
-  ) => api.patch(`/professionnel/receptionnistes/${affectationId}/permissions`, data).then((r) => r.data),
+  updatePermissions: (affectationId: string, data: any) =>
+    api.patch(`/professionnel/receptionnistes/${affectationId}/permissions`, data).then((r) => r.data),
+  setReceptionnisteActive: (affectationId: string, actif: boolean) =>
+    api.patch(`/professionnel/receptionnistes/${affectationId}/actif`, { actif }).then((r) => r.data),
+  retirerReceptionniste: (affectationId: string) =>
+    api.delete(`/professionnel/receptionnistes/${affectationId}`).then((r) => r.data),
 
-  stats: () => api.get('/professionnel/stats').then((r) => r.data),
+  // Paramètres de réservation
+  getParametres: () => api.get('/professionnel/parametres').then((r) => r.data),
+  updateParametres: (data: any) => api.patch('/professionnel/parametres', data).then((r) => r.data),
+
+  historique: (params?: { action?: string; take?: number }) =>
+    api.get('/professionnel/historique', { params }).then((r) => r.data),
+
+  stats: (params?: { periode?: string; du?: string; au?: string }) =>
+    api.get('/professionnel/stats', { params }).then((r) => r.data),
+
+  assistant: (question: string) => api.post('/assistant/pro', { question }).then((r) => r.data),
+};
+
+export const notificationsApi = {
+  list: () => api.get('/notifications').then((r) => r.data),
+  markAllRead: () => api.patch('/notifications/read-all').then((r) => r.data),
 };
 
 export const appointmentsApi = {
@@ -66,5 +81,6 @@ export const appointmentsApi = {
   findOne: (id: string) => api.get(`/appointments/${id}`).then((r) => r.data),
   updateStatus: (id: string, statut: string, motif?: string) =>
     api.patch(`/appointments/${id}/status`, { statut, motif }).then((r) => r.data),
-  reschedule: (id: string, dateDebut: string) => api.patch(`/appointments/${id}/reschedule`, { dateDebut }).then((r) => r.data),
+  reschedule: (id: string, dateDebut: string) =>
+    api.patch(`/appointments/${id}/reschedule`, { dateDebut }).then((r) => r.data),
 };
