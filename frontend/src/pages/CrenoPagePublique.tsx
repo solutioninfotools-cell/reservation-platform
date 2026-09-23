@@ -70,9 +70,9 @@ const FALLBACK_SERVICE_IMAGE = 'https://images.unsplash.com/photo-1551836022-d5d
 const FEMALE_AVATAR = 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?fm=jpg&q=80&w=600&auto=format&fit=crop';
 const MALE_AVATAR   = 'https://images.unsplash.com/photo-1560250097-0b93528c311a?fm=jpg&q=80&w=600&auto=format&fit=crop';
 
-function formatPrix(centimes?: number | null) {
-  if (centimes === null || centimes === undefined) return 'Tarif sur demande';
-  return (centimes / 100).toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' DA';
+function formatPrix(prix?: number | null) {
+  if (prix === null || prix === undefined) return 'Tarif sur demande';
+  return prix.toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' DA';
 }
 const STATUT_INFO: Record<StatutService, { label: string; type: string }> = {
   DISPONIBLE: { label: 'Disponible', type: 'disponible' },

@@ -28,7 +28,7 @@ export const router = createBrowserRouter([
     element: <RequireAuth />,
     children: [
       { element: <RequireRole role="ADMIN" />, children: [{ path: '/admin', element: <AdminDashboard /> }] },
-      { element: <RequireRole role="PROFESSIONNEL" />, children: [{ path: '/professionnel', element: <ProfessionnelDashboard /> }] },
+      { element: <RequireRole role="PROFESSIONNEL" />, children: [{ path: '/professionnel/:page?', element: <ProfessionnelDashboard /> }] },
       { element: <RequireRole role="RECEPTIONNISTE" />, children: [{ path: '/receptionniste', element: <ReceptionnisteDashboard /> }] },
     ],
   },

@@ -121,7 +121,7 @@ export function serviceVersUI(s: any) {
     name: s.nom,
     desc: s.description ?? '',
     duration: s.dureeMinutes,
-    price: s.prix != null ? Math.round(s.prix / 100) : 0,
+    price: s.prix != null ? s.prix : 0,
     status: s.actif ? 'active' : 'inactive',
     imageUrl: s.imageUrl ?? '',
     customFields: (s.champsPersonnalises ?? []).map(champVersUI),
@@ -133,7 +133,7 @@ export function serviceVersAPI(data: any) {
     nom: data.name,
     description: data.desc || undefined,
     dureeMinutes: data.duration,
-    prix: data.price ? Math.round(data.price * 100) : undefined,
+    prix: data.price ? Math.round(data.price) : undefined,
     imageUrl: data.imageUrl || undefined,
     actif: data.status === 'active',
   };

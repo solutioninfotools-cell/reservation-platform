@@ -41,4 +41,43 @@ export class AuditService {
       skip: params.skip ?? 0,
     });
   }
+
+  /**
+   * Historique des actions portant sur l'activité d'un professionnel
+   * (CDC II.17), avec l'auteur de chaque action pour le suivi des
+   * réceptionnistes (CDC II.13.3).
+   */
+  async listForProfessionnel(professionnelId: string, params: { action?: string; take?: number; skip?: number } = {}) {
+    const rows = await this.prisma.auditLog.findMany({
+      where: { professionnelId, ...(params.action ? { action: params.action } : {}) },
+      orderBy: { createdAt: 'desc' },
+      take: params.take ?? 100,
+      skip: params.skip ?? 0,
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            professionnel: { select: { nom: true } },
+            receptionniste: { select: { nom: true } },
+          },
+        },
+      },
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      cible: r.cible,
+      details: r.details,
+      createdAt: r.createdAt,
+      auteur: r.user
+        ? {
+            role: r.user.role,
+            nom: r.user.professionnel?.nom ?? r.user.receptionniste?.nom ?? r.user.email,
+          }
+        : { role: 'CLIENT', nom: 'Client' },
+    }));
+  }
 }

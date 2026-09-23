@@ -573,7 +573,7 @@ export class ProfessionnelService {
    */
   async creerRdv(userId: string, dto: Omit<CreateRdvDto, 'professionnelId'>) {
     const pro = await this.findByUserId(userId);
-    return this.appointments.create({ ...dto, professionnelId: pro.id } as CreateRdvDto, 'PROFESSIONNEL', userId);
+    return this.appointments.create({ ...dto, professionnelId: pro.id } as CreateRdvDto, 'PROFESSIONNEL');
   }
 
   async creneaux(professionnelId: string, serviceId: string, date: string) {
@@ -590,7 +590,7 @@ export class ProfessionnelService {
     user: { userId: string; role: any },
     filtres: { statut?: string; dateFrom?: string; dateTo?: string; search?: string; serviceId?: string },
   ) {
-    return this.appointments.list({ ...filtres, professionnelId }, user);
+    return this.appointments.list({ ...filtres, professionnelId });
   }
 
   // ---------------- Statistiques (CDC II.18) ----------------

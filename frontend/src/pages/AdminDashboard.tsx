@@ -96,7 +96,7 @@ export default function AdminDashboard() {
     return fmtDateShort(value);
   }
   window.fmtMois = function fmtMois(value) { return new Date(value).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }); }
-  window.fmtPrix = function fmtPrix(centimes) { return centimes === null || centimes === undefined ? "—" : (centimes / 100).toFixed(2); }
+  window.fmtPrix = function fmtPrix(prix) { return prix === null || prix === undefined ? "—" : prix.toLocaleString("fr-FR") + " DA"; }
   window.esc = function esc(value) {
     if (value === null || value === undefined) return "";
     return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

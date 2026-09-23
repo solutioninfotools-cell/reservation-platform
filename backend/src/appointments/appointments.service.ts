@@ -85,6 +85,26 @@ export class AppointmentsService {
   }
 
   // ============================================================
+  // PARAMÈTRES DE RÉSERVATION (section II.15bis du CDC)
+  // Ces règles sont appliquées ici, côté serveur : c'est ce qui les rend
+  // effectives, quel que soit le point d'entrée (client, réceptionniste, pro).
+  // ============================================================
+
+  /** Règles du professionnel, avec les valeurs par défaut du CDC si non configurées. */
+  async getParametres(professionnelId: string) {
+    const p = await this.prisma.parametresReservation.findUnique({ where: { professionnelId } });
+    return (
+      p ?? {
+        intervalleMinutes: 10,
+        delaiMinHeures: 2,
+        delaiMaxJours: 90,
+        seuilAbsences: 2,
+        maxRdvParClientParJour: 1,
+      }
+    );
+  }
+
+  // ============================================================
   // CRÉATION D'UN RENDEZ-VOUS — vérifie à nouveau la disponibilité côté
   // backend au moment de la création (jamais confiance dans le frontend),
   // et utilise une transaction + contrainte unique pour empêcher toute
