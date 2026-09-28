@@ -1,10 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ProfessionnelService } from './professionnel.service';
+import { FichierRecu, UploadService } from '../upload/upload.service';
 import { CreateServiceDto, UpdateServiceDto } from './dto/service.dto';
 import { CreateDisponibiliteDto, CreateIndisponibiliteDto, UpdateDisponibiliteDto } from './dto/disponibilite.dto';
 import { SetAffectationActiveDto, UpdatePermissionsDto } from './dto/affectation.dto';
@@ -24,7 +26,7 @@ import { CreateProRdvDto } from './dto/rdv.dto';
 @Roles('PROFESSIONNEL')
 @Controller('professionnel')
 export class ProfessionnelController {
-  constructor(private pro: ProfessionnelService) {}
+  constructor(private pro: ProfessionnelService, private upload: UploadService) {}
 
   // ---------------- Profil ----------------
   @Get('moi')
@@ -35,6 +37,17 @@ export class ProfessionnelController {
   @Patch('profil')
   updateProfil(@CurrentUser() user: any, @Body() body: any) {
     return this.pro.updateProfil(user.userId, body);
+  }
+
+  /**
+   * Téléversement d'une image depuis l'ordinateur (JPG/PNG/WebP, 5 Mo max).
+   * Renvoie l'adresse publique à enregistrer dans `photoUrl` ou `imageUrl`.
+   */
+  @Post('upload-image')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadImage(@UploadedFile() file: FichierRecu, @Query('type') type?: string) {
+    const url = await this.upload.saveImage(file, type === 'profil' ? 'profils' : 'services');
+    return { url };
   }
 
   // ---------------- Services ----------------

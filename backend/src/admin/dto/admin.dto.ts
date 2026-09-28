@@ -20,29 +20,29 @@ export type StatutCompteAdmin = 'EN_ATTENTE' | 'ACTIF' | 'REFUSE' | 'DESACTIVE';
 export class UpdateStatutCompteDto {
   @ApiProperty({ enum: ['EN_ATTENTE', 'ACTIF', 'REFUSE', 'DESACTIVE'] })
   @IsEnum(['EN_ATTENTE', 'ACTIF', 'REFUSE', 'DESACTIVE'] as const)
-  statut: StatutCompteAdmin;
+  statut!: StatutCompteAdmin;
 }
 
 /** Création d'un compte Professionnel, Réceptionniste ou Administrateur par l'Admin. */
 export class CreateCompteDto {
-  @ApiProperty() @IsEmail() email: string;
-  @ApiProperty({ minLength: 8 }) @IsString() @MinLength(8) password: string;
+  @ApiProperty() @IsEmail() email!: string;
+  @ApiProperty({ minLength: 8 }) @IsString() @MinLength(8) password!: string;
   @ApiProperty({ enum: ['PROFESSIONNEL', 'RECEPTIONNISTE', 'ADMIN'] })
   @IsEnum(['PROFESSIONNEL', 'RECEPTIONNISTE', 'ADMIN'] as const)
-  role: 'PROFESSIONNEL' | 'RECEPTIONNISTE' | 'ADMIN';
-  @ApiProperty() @IsString() nom: string;
+  role!: 'PROFESSIONNEL' | 'RECEPTIONNISTE' | 'ADMIN';
+  @ApiProperty() @IsString() nom!: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() telephone?: string;
   @ApiProperty({ required: false, description: 'Professionnel uniquement' }) @IsOptional() @IsString() specialite?: string;
   @ApiProperty({ required: false, description: 'Professionnel uniquement' }) @IsOptional() @IsString() domaineId?: string;
 }
 
 export class ResetPasswordDto {
-  @ApiProperty({ minLength: 8 }) @IsString() @MinLength(8) password: string;
+  @ApiProperty({ minLength: 8 }) @IsString() @MinLength(8) password!: string;
 }
 
 export class AffectationDto {
-  @ApiProperty() @IsString() professionnelId: string;
-  @ApiProperty() @IsString() receptionnisteId: string;
+  @ApiProperty() @IsString() professionnelId!: string;
+  @ApiProperty() @IsString() receptionnisteId!: string;
 }
 
 /** Remplace l'ensemble des affectations d'une réceptionniste (formulaire « Affecter »). */
@@ -51,7 +51,7 @@ export class SetAffectationsDto {
   @IsArray()
   @ArrayUnique()
   @IsString({ each: true })
-  professionnelIds: string[];
+  professionnelIds!: string[];
 }
 
 export class UpdatePermissionsAffectationDto {
@@ -86,10 +86,17 @@ export class UpdateParamsDto {
   @IsOptional() @IsInt() @Min(0) delaiMinModificationHeures?: number;
   @ApiProperty({ required: false, description: 'Nombre de reports autorisés par rendez-vous' })
   @IsOptional() @IsInt() @Min(0) maxChangementsRdv?: number;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: "Nombre total de personnes de l'équipe (Professionnels + Réceptionnistes). null = pas de limite.",
+  })
+  @IsOptional() @IsInt() @Min(1) tailleEquipe?: number | null;
 }
 
 export class SetServiceActifDto {
-  @ApiProperty() @IsBoolean() actif: boolean;
+  @ApiProperty() @IsBoolean() actif!: boolean;
 }
 
 export class AnnulerRdvDto {
@@ -114,7 +121,7 @@ export class UpdateReceptionnisteDto {
 }
 
 export class UpdateEmailDto {
-  @ApiProperty() @IsEmail() email: string;
+  @ApiProperty() @IsEmail() email!: string;
 }
 
 // ===========================================================================
@@ -123,11 +130,11 @@ export class UpdateEmailDto {
 export class BulkStatutCompteDto {
   @ApiProperty({ type: [String] })
   @IsArray() @ArrayNotEmpty() @ArrayUnique() @IsString({ each: true })
-  userIds: string[];
+  userIds!: string[];
 
   @ApiProperty({ enum: ['EN_ATTENTE', 'ACTIF', 'REFUSE', 'DESACTIVE'] })
   @IsEnum(['EN_ATTENTE', 'ACTIF', 'REFUSE', 'DESACTIVE'] as const)
-  statut: StatutCompteAdmin;
+  statut!: StatutCompteAdmin;
 }
 
 export type CibleAnnonce = 'TOUS' | 'PROFESSIONNELS' | 'RECEPTIONNISTES' | 'SELECTION';
@@ -136,9 +143,9 @@ export type CibleAnnonce = 'TOUS' | 'PROFESSIONNELS' | 'RECEPTIONNISTES' | 'SELE
 export class AnnonceDto {
   @ApiProperty({ enum: ['TOUS', 'PROFESSIONNELS', 'RECEPTIONNISTES', 'SELECTION'] })
   @IsEnum(['TOUS', 'PROFESSIONNELS', 'RECEPTIONNISTES', 'SELECTION'] as const)
-  cible: CibleAnnonce;
+  cible!: CibleAnnonce;
 
-  @ApiProperty({ minLength: 3 }) @IsString() @MinLength(3) message: string;
+  @ApiProperty({ minLength: 3 }) @IsString() @MinLength(3) message!: string;
 
   @ApiProperty({ required: false, type: [String], description: 'Requis si cible = SELECTION' })
   @IsOptional() @IsArray() @ArrayUnique() @IsString({ each: true })
@@ -151,11 +158,11 @@ export class AnnonceDto {
 export class SetServiceStatutDto {
   @ApiProperty({ enum: ['DISPONIBLE', 'COMPLET', 'INDISPONIBLE'] })
   @IsEnum(['DISPONIBLE', 'COMPLET', 'INDISPONIBLE'] as const)
-  statut: 'DISPONIBLE' | 'COMPLET' | 'INDISPONIBLE';
+  statut!: 'DISPONIBLE' | 'COMPLET' | 'INDISPONIBLE';
 }
 
 export class DeplacerRdvDto {
-  @ApiProperty({ description: 'Nouveau début, au format ISO' }) @IsDateString() dateDebut: string;
+  @ApiProperty({ description: 'Nouveau début, au format ISO' }) @IsDateString() dateDebut!: string;
 }
 
 export class UpdateClientDto {
@@ -171,7 +178,7 @@ export class UpdateClientDto {
 // Domaines d'activité
 // ===========================================================================
 export class CreateDomaineDto {
-  @ApiProperty() @IsString() @MinLength(2) nom: string;
+  @ApiProperty() @IsString() @MinLength(2) nom!: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() actif?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsInt() @Min(0) ordre?: number;

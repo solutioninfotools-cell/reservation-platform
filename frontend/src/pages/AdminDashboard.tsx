@@ -11,6 +11,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const ac = new AbortController();
+    document.getElementById('backProBtn')?.addEventListener('click', () => navigate('/professionnel'), { signal: ac.signal });
     document.getElementById('logoutBtn')?.addEventListener('click', () => {
       logout();
       navigate('/connexion');
@@ -40,8 +41,9 @@ export default function AdminDashboard() {
   const ROLE_LABELS = { PROFESSIONNEL: "Professionnel", RECEPTIONNISTE: "Réceptionniste", ADMIN: "Administrateur", CLIENT: "Client" };
   const TYPE_INDISPO = { CRENEAU: "Créneau", JOURNEE: "Journée", PERIODE: "Période" };
   const CIBLES_ANNONCE = { TOUS: "Tous les comptes actifs", PROFESSIONNELS: "Professionnels", RECEPTIONNISTES: "Réceptionnistes" };
+  // Identique à la liste proposée par la configuration initiale (InitialSetup.tsx) : un même secteur ne peut pas exister sous deux noms.
+  const CATALOGUE_DOMAINES = ["Médical", "Juridique", "Coiffure/Beauté", "Prestataire de service général", "Centre de formation", "Salle de sport/Coach"];
   const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
-  const NOTIFS_ALERTE = ["COMPTE_REFUSE", "ANNULATION", "CONFLIT_PLANNING", "PROFESSIONNEL_ABSENT"];
 
   let STATS = null;
   let PROS = [];
@@ -54,8 +56,7 @@ export default function AdminDashboard() {
   let RDV_TOTAL = 0;
   let USERS_VIEW = [];
   let AGENDAS = [];
-  let PLATFORM = { platformName: "", slogan: "", description: "", logoUrl: "", address: "", phone: "", email: "", joursOuvrables: [], horairesGeneraux: "", conditions: "", conditionsReservation: "", heroImageUrl: "", localisationUrl: "", delaiMinAnnulationHeures: 0, delaiMinModificationHeures: 48, maxChangementsRdv: 1, domaine: "" };
-  let NOTIFS = [];
+  let PLATFORM = { platformName: "", slogan: "", description: "", logoUrl: "", address: "", phone: "", email: "", joursOuvrables: [], horairesGeneraux: "", conditions: "", conditionsReservation: "", heroImageUrl: "", localisationUrl: "", delaiMinAnnulationHeures: 0, delaiMinModificationHeures: 48, maxChangementsRdv: 1, domaine: "", tailleEquipe: null, equipeActuelle: 0 };
   let AUDIT = { items: [], total: 0, actions: [] };
   let DOMAINES = [];
   let INDISPOS = [];
@@ -71,6 +72,7 @@ export default function AdminDashboard() {
     servicesFilter: { search: "", actif: "", statut: "" },
     auditFilter: { action: "", from: "", to: "", take: 50, skip: 0 },
     indispoFilter: { professionnelId: "", type: "", from: "", to: "" },
+    viewModes: { pros: "liste", clients: "liste", services: "liste" },
   };
 
   window.todayISO = function todayISO() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
@@ -119,7 +121,7 @@ export default function AdminDashboard() {
 
   const mapPro = (p) => ({
     id: p.id, userId: p.userId, name: p.nom, email: p.email, phone: p.telephone || "—",
-    role: p.specialite || "—",
+    role: p.specialite || "—", photoUrl: p.photoUrl || "",
     domaineId: p.domaineId || "", domaine: p.domaine || "",
     color: colorFor(p.id), statut: STATUT_UI[p.statutCompte] || "attente",
     createdAt: p.createdAt, lastLogin: fmtRelative(p.lastLoginAt),
@@ -136,14 +138,9 @@ export default function AdminDashboard() {
     date: toDay(r.dateDebut), heure: toHeure(r.dateDebut), fin: toHeure(r.dateFin), etat: r.statut, origine: r.origine,
     motif: r.motifAnnulation, remarque: r.remarque, createdAt: r.createdAt, modifiedAt: r.updatedAt,
   });
-  const mapNotif = (n) => ({
-    id: n.id, type: NOTIFS_ALERTE.includes(n.type) ? "warn" : "new",
-    text: esc(n.message), time: fmtRelative(n.createdAt), unread: !n.lu, kind: n.type,
-  });
-
   window.loadAll = async function loadAll() {
     try {
-      const [stats, pros, recs, clients, services, rdv, params, notifs, agendas, domaines] = await Promise.all([
+      const [stats, pros, recs, clients, services, rdv, params, agendas, domaines] = await Promise.all([
         adminApi.stats(),
         adminApi.listPros(),
         adminApi.listRecs(),
@@ -151,7 +148,6 @@ export default function AdminDashboard() {
         adminApi.listServices(),
         adminApi.listRdv({ take: state.rdvFilter.take }),
         adminApi.getParams(),
-        adminApi.notifications(),
         adminApi.listAgendas(),
         adminApi.listDomaines(),
       ]);
@@ -162,7 +158,6 @@ export default function AdminDashboard() {
       SERVICES_VIEW = services;
       RESERVATIONS = (rdv.items || []).map(mapRdv); RDV_TOTAL = rdv.total;
       PLATFORM = { ...PLATFORM, ...params };
-      NOTIFS = notifs.map(mapNotif);
       AGENDAS = agendas;
       DOMAINES = domaines;
       return true;
@@ -182,7 +177,6 @@ export default function AdminDashboard() {
   }
   document.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => goToPage(item.dataset.page), { signal: ac.signal }));
   document.getElementById("collapseBtn").addEventListener("click", () => document.getElementById("sidebar").classList.toggle("collapsed"), { signal: ac.signal });
-  document.getElementById("notifBellBtn").addEventListener("click", () => goToPage("notifs"), { signal: ac.signal });
 
   const profileBtn = document.getElementById("profileBtn");
   const profileMenu = document.getElementById("profileMenu");
@@ -207,22 +201,17 @@ export default function AdminDashboard() {
     else if (page === "rdv") renderRdvPage();
     else if (page === "services") renderServicesPage();
     else if (page === "agendas") renderAgendasPage();
-    else if (page === "absences") renderAbsencesPage();
     else if (page === "domaines") renderDomainesPage();
     else if (page === "params") renderParamsPage();
     else if (page === "audit") renderAuditPage();
-    else if (page === "notifs") renderNotifsPage();
     updateBadges();
   }
   window.updateBadges = function updateBadges() {
     const pro = PROS.filter((p) => p.statut === "attente").length;
     const rec = RECEPTIONNISTES.filter((r) => r.statut === "attente").length;
-    const n = NOTIFS.filter((x) => x.unread).length;
     const set = (id, value, display) => { const el = document.getElementById(id); if (!el) return; el.textContent = value; el.style.display = value ? display : "none"; };
     set("navProBadge", pro, "inline-block");
     set("navRecBadge", rec, "inline-block");
-    set("navNotifBadge", n, "inline-block");
-    set("tbNotifDot", n, "flex");
   }
 
   window.svg = function svg(inner, w) { w = w || 15; return `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`; }
@@ -246,6 +235,44 @@ export default function AdminDashboard() {
   window.iconChevronLeft = function iconChevronLeft() { return svg('<polyline points="15 18 9 12 15 6"/>', 14); }
   window.iconChevronRight = function iconChevronRight() { return svg('<polyline points="9 18 15 12 9 6"/>', 14); }
 
+  window.toggleExportMenu = function toggleExportMenu(event) {
+    event.stopPropagation();
+    const menu = event.currentTarget.nextElementSibling;
+    document.querySelectorAll(".export-dropdown.show").forEach((m) => { if (m !== menu) m.classList.remove("show"); });
+    menu.classList.toggle("show");
+  }
+  window.closeExportMenus = function closeExportMenus() {
+    document.querySelectorAll(".export-dropdown.show").forEach((menu) => menu.classList.remove("show"));
+  }
+  document.addEventListener("click", () => closeExportMenus(), { signal: ac.signal });
+
+  /** Un seul bouton « Exporter », menu déroulant PDF / Excel (repris du style de l'espace Réceptionniste). */
+  window.exportDropdownHtml = function exportDropdownHtml(csvFn, pdfFn) {
+    return `<div class="export-wrap">
+      <button class="btn btn-ghost btn-sm" onclick="toggleExportMenu(event)">${iconPrinter()} Exporter</button>
+      <div class="export-dropdown">
+        <button onclick="event.stopPropagation(); ${pdfFn}(); closeExportMenus()"><span>📄</span> PDF</button>
+        <button onclick="event.stopPropagation(); ${csvFn}(); closeExportMenus()"><span>▦</span> Excel</button>
+      </div>
+    </div>`;
+  }
+  window.iconGridView = function iconGridView() { return svg('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>', 14); }
+  window.iconListView = function iconListView() { return svg('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>', 14); }
+
+  window.viewToggleHtml = function viewToggleHtml(scope) {
+    const mode = state.viewModes[scope];
+    return `<div style="margin-left:auto;display:flex;gap:4px;">
+      <button class="icon-btn${mode === "liste" ? " icon-btn-active" : ""}" title="Vue liste" onclick="setViewMode('${scope}','liste')">${iconListView()}</button>
+      <button class="icon-btn${mode === "grille" ? " icon-btn-active" : ""}" title="Vue grille" onclick="setViewMode('${scope}','grille')">${iconGridView()}</button>
+    </div>`;
+  }
+  window.setViewMode = function setViewMode(scope, mode) {
+    state.viewModes[scope] = mode;
+    if (scope === "pros") renderProsPage();
+    else if (scope === "clients") renderClientsPage();
+    else if (scope === "services") renderServicesPage();
+  }
+
   window.renderDashboard = function renderDashboard() {
     const s = STATS || {};
     const parStatut = s.rdvParStatut || {};
@@ -258,8 +285,6 @@ export default function AdminDashboard() {
       { label: "Réceptionnistes", value: s.nbRec ?? 0, icon: iconUsers(), bg: "linear-gradient(135deg,#E6F7F5,#CFEDE8)", color: "#2FA79D" },
       { label: "Clients (au moins 1 RDV)", value: s.nbClients ?? 0, icon: iconUsers(), bg: "linear-gradient(135deg,#FDF1E2,#FBE0BF)", color: "#E2954A" },
       { label: "Rendez-vous aujourd'hui", value: s.rdvAujourdhui ?? 0, icon: iconCal(), bg: "linear-gradient(135deg,#E9E3FF,#9B7CF2)", color: "#FFFFFF" },
-      { label: "Professionnels sans domaine", value: s.prosSansDomaine ?? 0, icon: iconTag(), bg: "linear-gradient(135deg,#FDECF3,#F8D2E2)", color: "#E2478A" },
-      { label: "Absences en cours ou à venir", value: s.absencesEnCours ?? 0, icon: iconAlert(), bg: "linear-gradient(135deg,#FDF1E2,#FBE0BF)", color: "#E2954A" },
     ];
     const repartitionDomaines = s.repartitionDomaines || [];
     const maxDom = repartitionDomaines.length ? Math.max(...repartitionDomaines.map((d) => d.nbProfessionnels), 1) : 1;
@@ -318,10 +343,6 @@ export default function AdminDashboard() {
               </div>`).join("") || `<div class="table-empty">Aucune inscription en attente</div>`}
           </div>
           <div class="card" style="margin-bottom:14px;">
-            <div class="card-head"><h3>Activité récente</h3><button class="btn btn-ghost btn-sm" onclick="goToPage('notifs')">Tout voir</button></div>
-            ${NOTIFS.slice(0, 4).map((n) => notifRowHtml(n)).join("") || `<div class="table-empty">Aucune notification</div>`}
-          </div>
-          <div class="card" style="margin-bottom:14px;">
             <div class="card-head"><h3>Répartition par domaine</h3><button class="btn btn-ghost btn-sm" onclick="goToPage('domaines')">Gérer</button></div>
             <div style="padding:14px 20px 18px;">
               ${repartitionDomaines.length ? repartitionDomaines.map((d) => `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${esc(d.nom)}${d.actif ? "" : " (masqué)"}</span><b>${d.nbProfessionnels}</b></div><div style="background:var(--primary-soft);border-radius:999px;height:7px;overflow:hidden;"><div style="width:${(d.nbProfessionnels / maxDom) * 100}%;background:${d.actif ? "linear-gradient(90deg,#7350E8,#9B7CF2)" : "linear-gradient(90deg,#A8A2BE,#8A8496)"};height:100%;"></div></div></div>`).join("") : `<div class="table-empty">Aucun domaine d'activité défini</div>`}
@@ -342,8 +363,7 @@ export default function AdminDashboard() {
       <div class="page-head">
         <div><h1 class="page-title">Professionnels</h1><p class="page-sub">Validation des inscriptions, activation des comptes, consultation de l'activité</p></div>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-primary btn-sm" onclick="openCreateCompte('PROFESSIONNEL')">${iconPlus()} Nouveau compte</button>
-          <button class="btn btn-ghost btn-sm" onclick="exportProsCsv()">${iconPrinter()} Exporter</button>
+          ${exportDropdownHtml("exportProsCsv","exportProsPdf")}
         </div>
       </div>
       <div class="filter-row">
@@ -354,9 +374,10 @@ export default function AdminDashboard() {
           <option value="AUCUN" ${state.proFilter.domaineId === "AUCUN" ? "selected" : ""}>Sans domaine</option>
           ${DOMAINES.map((d) => `<option value="${d.id}" ${state.proFilter.domaineId === d.id ? "selected" : ""}>${esc(d.nom)}</option>`).join("")}
         </select>
+        ${viewToggleHtml("pros")}
       </div>
       <div id="prosBulkBar"></div>
-      <div class="card"><table class="data-table"><thead><tr><th style="width:34px"><input type="checkbox" id="prosCheckAll" onchange="toggleAllSelection('pros', this.checked)" /></th><th>Professionnel</th><th>Domaine</th><th>Services</th><th>Statut</th><th>Créé le</th><th>Dernière connexion</th><th></th></tr></thead><tbody id="prosTableBody"></tbody></table></div>
+      <div id="prosViewContainer"></div>
     `;
     renderProsTable();
   }
@@ -382,23 +403,40 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
   window.renderProsTable = function renderProsTable() {
-    const body = document.getElementById("prosTableBody");
-    if (!body) return;
-    if (!PROS_VIEW.length) { body.innerHTML = `<tr><td colspan="8"><div class="table-empty">Aucun professionnel trouvé</div></td></tr>`; renderBulkBar("pros"); return; }
-    body.innerHTML = PROS_VIEW.map((p) => `<tr class="row-clickable" onclick="openProFiche('${p.id}')">
-      <td onclick="event.stopPropagation()"><input type="checkbox" ${SELECTION.pros.has(p.userId) ? "checked" : ""} onchange="toggleSelection('pros','${p.userId}', this.checked)" /></td>
-      <td><div class="cell-client"><div class="avatar-sm" style="background:${p.color}">${initials(p.name)}</div><div><div class="cell-client-name">${esc(p.name)}</div><div class="cell-client-sub">${esc(p.role)}</div></div></div></td>
-      <td>${p.domaine ? `<span class="status-pill st-reserve">${esc(p.domaine)}</span>` : `<span class="dash-list-sub">—</span>`}</td>
-      <td>${p.nbServices}</td>
-      <td><span class="status-pill ${STATUS_COMPTE[p.statut].cls}">${STATUS_COMPTE[p.statut].label}</span></td>
-      <td>${fmtDateShort(p.createdAt)}</td><td>${p.lastLogin}</td>
-      <td><div class="row-actions" onclick="event.stopPropagation()">
-        <button class="icon-btn" title="Consulter la fiche" onclick="openProFiche('${p.id}')">${iconEye()}</button>
-        <button class="icon-btn" title="Modifier la fiche" onclick="openEditPro('${p.id}')">${iconEdit()}</button>
-        <button class="icon-btn" title="Agenda" onclick="openAgenda('${p.id}')">${iconCal()}</button>
-        <button class="icon-btn" title="Réinitialiser le mot de passe" onclick="openResetPassword('${p.userId}','${escArg(p.name)}')">${iconKey()}</button>
-      </div></td>
-    </tr>`).join("");
+    const container = document.getElementById("prosViewContainer");
+    if (!container) return;
+    if (!PROS_VIEW.length) { container.innerHTML = `<div class="card"><div class="table-empty">Aucun professionnel trouvé</div></div>`; renderBulkBar("pros"); return; }
+    if (state.viewModes.pros === "grille") {
+      container.innerHTML = `<div class="grid-cards">${PROS_VIEW.map((p) => `
+        <div class="grid-card" onclick="openProFiche('${p.id}')">
+          <div class="grid-card-media">${p.photoUrl ? `<img src="${esc(p.photoUrl)}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;grid-card-avatar&quot; style=&quot;background:${p.color}&quot;>${initials(p.name)}</div>'" />` : `<div class="grid-card-avatar" style="background:${p.color}">${initials(p.name)}</div>`}</div>
+          <div class="grid-card-body">
+            <div class="grid-card-name">${esc(p.name)}</div>
+            <div class="grid-card-sub">${esc(p.role)}${p.domaine ? " · " + esc(p.domaine) : ""}</div>
+            <span class="status-pill ${STATUS_COMPTE[p.statut].cls}">${STATUS_COMPTE[p.statut].label}</span>
+            <div class="grid-card-actions" onclick="event.stopPropagation()">
+              <button class="icon-btn" title="Consulter la fiche" onclick="openProFiche('${p.id}')">${iconEye()}</button>
+              <button class="icon-btn" title="Modifier la fiche" onclick="openEditPro('${p.id}')">${iconEdit()}</button>
+              <button class="icon-btn" title="Agenda" onclick="openAgenda('${p.id}')">${iconCal()}</button>
+            </div>
+          </div>
+        </div>`).join("")}</div>`;
+    } else {
+      container.innerHTML = `<div class="card"><table class="data-table"><thead><tr><th style="width:34px"><input type="checkbox" id="prosCheckAll" onchange="toggleAllSelection('pros', this.checked)" /></th><th>Professionnel</th><th>Domaine</th><th>Services</th><th>Statut</th><th>Créé le</th><th>Dernière connexion</th><th></th></tr></thead><tbody>${PROS_VIEW.map((p) => `<tr class="row-clickable" onclick="openProFiche('${p.id}')">
+        <td onclick="event.stopPropagation()"><input type="checkbox" ${SELECTION.pros.has(p.userId) ? "checked" : ""} onchange="toggleSelection('pros','${p.userId}', this.checked)" /></td>
+        <td><div class="cell-client"><div class="avatar-sm" style="background:${p.color}">${initials(p.name)}</div><div><div class="cell-client-name">${esc(p.name)}</div><div class="cell-client-sub">${esc(p.role)}</div></div></div></td>
+        <td>${p.domaine ? `<span class="status-pill st-reserve">${esc(p.domaine)}</span>` : `<span class="dash-list-sub">—</span>`}</td>
+        <td>${p.nbServices}</td>
+        <td><span class="status-pill ${STATUS_COMPTE[p.statut].cls}">${STATUS_COMPTE[p.statut].label}</span></td>
+        <td>${fmtDateShort(p.createdAt)}</td><td>${p.lastLogin}</td>
+        <td><div class="row-actions" onclick="event.stopPropagation()">
+          <button class="icon-btn" title="Consulter la fiche" onclick="openProFiche('${p.id}')">${iconEye()}</button>
+          <button class="icon-btn" title="Modifier la fiche" onclick="openEditPro('${p.id}')">${iconEdit()}</button>
+          <button class="icon-btn" title="Agenda" onclick="openAgenda('${p.id}')">${iconCal()}</button>
+          <button class="icon-btn" title="Réinitialiser le mot de passe" onclick="openResetPassword('${p.userId}','${escArg(p.name)}')">${iconKey()}</button>
+        </div></td>
+      </tr>`).join("")}</tbody></table></div>`;
+    }
     renderBulkBar("pros");
   }
   window.exportProsCsv = function exportProsCsv() {
@@ -522,10 +560,21 @@ export default function AdminDashboard() {
         </div>
         <div class="field-row"><label>Adresse du cabinet</label><input type="text" id="epAdr" value="${esc(p.adresse || "")}" /></div>
         <div class="field-row"><label>Présentation publique</label><textarea id="epDesc" rows="3">${esc(p.description || "")}</textarea></div>
-        <div class="field-row"><label>URL de la photo</label><input type="text" id="epPhoto" value="${esc(p.photoUrl || "")}" placeholder="https://…" /></div>
-        <div class="field-hint">Le professionnel est notifié de la modification. L'adresse e-mail se change séparément.</div>
+        <div class="field-row">
+          <label>Photo du professionnel</label>
+          <div class="img-choix">
+            <div class="img-apercu vide" id="epPhotoApercu"></div>
+            <div class="img-choix-actions">
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer;">Choisir une image<input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="televerserImageAdmin(this,'epPhoto','epPhotoApercu','profil')" /></label>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="retirerImageAdmin('epPhoto','epPhotoApercu')">Retirer</button>
+            </div>
+          </div>
+          <input type="hidden" id="epPhoto" value="${esc(p.photoUrl || "")}" />
+        </div>
+        <div class="field-hint">JPG, PNG ou WebP · 5 Mo max. Le professionnel est notifié de la modification. L'adresse e-mail se change séparément.</div>
         <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveEditPro('${id}')">${iconCheck()} Enregistrer</button></div>
       `);
+      apercuImageAdmin("epPhotoApercu", "epPhoto");
     } catch (e) { showError(e); }
   }
   window.saveEditPro = async function saveEditPro(id) {
@@ -605,39 +654,6 @@ export default function AdminDashboard() {
       showToast(`Statut mis à jour : <b>${STATUS_COMPTE[statutUi].label}</b>`);
     } catch (e) { showError(e); }
   }
-  window.openCreateCompte = function openCreateCompte(role) {
-    const titre = role === "PROFESSIONNEL" ? "Nouveau professionnel" : role === "ADMIN" ? "Nouvel administrateur" : "Nouvelle réceptionniste";
-    openModal(`
-      <div class="modal-head"><div><p class="modal-title">${titre}</p><p class="modal-sub">Le compte est actif immédiatement (créé par l'administrateur)</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="field-row"><label>Nom complet *</label><input type="text" id="ncNom" placeholder="Nom et prénom" /></div>
-      <div class="field-2col">
-        <div class="field-row"><label>E-mail *</label><input type="email" id="ncEmail" placeholder="nom@exemple.com" /></div>
-        <div class="field-row"><label>Téléphone</label><input type="text" id="ncTel" /></div>
-      </div>
-      <div class="field-row"><label>Mot de passe provisoire * (8 caractères minimum)</label><input type="text" id="ncPwd" value="${suggestPassword()}" /></div>
-      ${role === "PROFESSIONNEL" ? `<div class="field-2col">
-        <div class="field-row"><label>Fonction / spécialité</label><input type="text" id="ncSpec" placeholder="Ex. Médecin généraliste" /></div>
-        <div class="field-row"><label>Domaine d'activité</label><select id="ncDomaine"><option value="">— Aucun —</option>${DOMAINES.filter((d) => d.actif).map((d) => `<option value="${d.id}">${esc(d.nom)}</option>`).join("")}</select></div>
-      </div>` : ""}
-      ${role === "ADMIN" ? `<div class="field-hint" style="color:#8A5A1E;">Un administrateur dispose de tous les droits de supervision de la plateforme. Le nom saisi n'est conservé que dans le journal d'audit : un compte Admin n'a pas de fiche métier.</div>` : ""}
-      <div class="field-hint">Communiquez le mot de passe provisoire à la personne concernée : elle pourra le modifier depuis son espace.</div>
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveCompte('${role}')">${iconCheck()} Créer le compte</button></div>
-    `);
-  }
-  window.saveCompte = async function saveCompte(role) {
-    const payload = { role, nom: val("ncNom"), email: val("ncEmail"), password: val("ncPwd") };
-    if (val("ncTel")) payload.telephone = val("ncTel");
-    if (role === "PROFESSIONNEL" && val("ncSpec")) payload.specialite = val("ncSpec");
-    if (role === "PROFESSIONNEL" && val("ncDomaine")) payload.domaineId = val("ncDomaine");
-    if (!payload.nom || !payload.email || payload.password.length < 8) { showToast("Nom, e-mail et mot de passe (8 caractères min.) sont obligatoires"); return; }
-    try {
-      await adminApi.createCompte(payload);
-      closeModal();
-      await loadAll();
-      renderPage(state.page);
-      showToast(`Compte créé : <b>${esc(payload.email)}</b>`);
-    } catch (e) { showError(e); }
-  }
   window.openResetPassword = function openResetPassword(userId, name) {
     openModal(`
       <div class="modal-head"><div><p class="modal-title">Réinitialiser le mot de passe</p><p class="modal-sub">${esc(name)}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
@@ -676,8 +692,7 @@ export default function AdminDashboard() {
       <div class="page-head">
         <div><h1 class="page-title">Réceptionnistes</h1><p class="page-sub">Validation, activation, affectation aux professionnels et autorisations</p></div>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-primary btn-sm" onclick="openCreateCompte('RECEPTIONNISTE')">${iconPlus()} Nouveau compte</button>
-          <button class="btn btn-ghost btn-sm" onclick="exportRecsCsv()">${iconPrinter()} Exporter</button>
+          ${exportDropdownHtml("exportRecsCsv","exportRecsPdf")}
         </div>
       </div>
       <div class="filter-row">
@@ -825,9 +840,9 @@ export default function AdminDashboard() {
 
   window.renderClientsPage = function renderClientsPage() {
     document.getElementById("page-clients").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Clients</h1><p class="page-sub">Vue globale, tous professionnels confondus</p></div><button class="btn btn-ghost btn-sm" onclick="exportCsv('clients','clients.csv',{ search: state.clientsFilter.search || undefined })">${iconPrinter()} Exporter</button></div>
-      <div class="filter-row"><input type="text" placeholder="Nom, e-mail, téléphone…" value="${esc(state.clientsFilter.search)}" oninput="updateClientsFilter(this.value)" style="min-width:240px" /></div>
-      <div class="card"><table class="data-table"><thead><tr><th>Client</th><th>Téléphone</th><th>Dernier professionnel</th><th>Rendez-vous</th><th>Dernier RDV</th><th>Créé le</th></tr></thead><tbody id="clientsTableBody"></tbody></table></div>
+      <div class="page-head"><div><h1 class="page-title">Clients</h1><p class="page-sub">Vue globale, tous professionnels confondus</p></div>${exportDropdownHtml("exportClientsCsv","exportClientsPdf")}</div>
+      <div class="filter-row"><input type="text" placeholder="Nom, e-mail, téléphone…" value="${esc(state.clientsFilter.search)}" oninput="updateClientsFilter(this.value)" style="min-width:240px" />${viewToggleHtml("clients")}</div>
+      <div id="clientsViewContainer"></div>
     `;
     renderClientsTable();
   }
@@ -838,13 +853,25 @@ export default function AdminDashboard() {
     catch (e) { showError(e); }
   }
   window.renderClientsTable = function renderClientsTable() {
-    const body = document.getElementById("clientsTableBody");
-    if (!body) return;
-    if (!CLIENTS_VIEW.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucun client trouvé</div></td></tr>`; return; }
-    body.innerHTML = CLIENTS_VIEW.map((c) => `<tr class="row-clickable" onclick="openClientFiche('${c.id}')">
-      <td><div class="cell-client"><div class="avatar-sm" style="background:${colorFor(c.id)}">${initials(c.prenom + " " + c.nom)}</div><div><div class="cell-client-name">${esc(c.prenom + " " + c.nom)}</div><div class="cell-client-sub">${esc(c.email || "—")}</div></div></div></td>
-      <td>${esc(c.telephone)}</td><td>${esc(c.professionnel || "—")}</td><td>${c.nbRdv}</td><td>${fmtDateShort(c.dernierRdv)}</td><td>${fmtDateShort(c.createdAt)}</td>
-    </tr>`).join("");
+    const container = document.getElementById("clientsViewContainer");
+    if (!container) return;
+    if (!CLIENTS_VIEW.length) { container.innerHTML = `<div class="card"><div class="table-empty">Aucun client trouvé</div></div>`; return; }
+    if (state.viewModes.clients === "grille") {
+      container.innerHTML = `<div class="grid-cards">${CLIENTS_VIEW.map((c) => `
+        <div class="grid-card" onclick="openClientFiche('${c.id}')">
+          <div class="grid-card-media"><div class="grid-card-avatar" style="background:${colorFor(c.id)}">${initials(c.prenom + " " + c.nom)}</div></div>
+          <div class="grid-card-body">
+            <div class="grid-card-name">${esc(c.prenom + " " + c.nom)}</div>
+            <div class="grid-card-sub">${esc(c.telephone)}</div>
+            <div class="grid-card-sub">${c.nbRdv} rendez-vous${c.professionnel ? " · " + esc(c.professionnel) : ""}</div>
+          </div>
+        </div>`).join("")}</div>`;
+    } else {
+      container.innerHTML = `<div class="card"><table class="data-table"><thead><tr><th>Client</th><th>Téléphone</th><th>Dernier professionnel</th><th>Rendez-vous</th><th>Dernier RDV</th><th>Créé le</th></tr></thead><tbody>${CLIENTS_VIEW.map((c) => `<tr class="row-clickable" onclick="openClientFiche('${c.id}')">
+        <td><div class="cell-client"><div class="avatar-sm" style="background:${colorFor(c.id)}">${initials(c.prenom + " " + c.nom)}</div><div><div class="cell-client-name">${esc(c.prenom + " " + c.nom)}</div><div class="cell-client-sub">${esc(c.email || "—")}</div></div></div></td>
+        <td>${esc(c.telephone)}</td><td>${esc(c.professionnel || "—")}</td><td>${c.nbRdv}</td><td>${fmtDateShort(c.dernierRdv)}</td><td>${fmtDateShort(c.createdAt)}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+    }
   }
   window.openClientFiche = async function openClientFiche(id) {
     try {
@@ -925,7 +952,7 @@ export default function AdminDashboard() {
   window.renderRdvPage = function renderRdvPage() {
     const f = state.rdvFilter;
     document.getElementById("page-rdv").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Réservations</h1><p class="page-sub">Vue globale, tous professionnels confondus</p></div><button class="btn btn-ghost btn-sm" onclick="exportRdvCsv()">${iconPrinter()} Exporter</button></div>
+      <div class="page-head"><div><h1 class="page-title">Réservations</h1><p class="page-sub">Vue globale, tous professionnels confondus</p></div>${exportDropdownHtml("exportRdvCsv","exportRdvPdf")}</div>
       <div class="filter-row">
         <input type="text" placeholder="Client, service, professionnel…" value="${esc(f.search)}" oninput="updateRdvFilter('search', this.value)" style="min-width:220px" />
         <select onchange="updateRdvFilter('statut', this.value)"><option value="">Tous les états</option>${Object.entries(ETAT_LABELS).map(([k, v]) => `<option value="${k}" ${f.statut === k ? "selected" : ""}>${v.label}</option>`).join("")}</select>
@@ -1069,13 +1096,14 @@ export default function AdminDashboard() {
 
   window.renderServicesPage = function renderServicesPage() {
     document.getElementById("page-services").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Services</h1><p class="page-sub">Consultation et activation des services créés par les professionnels</p></div><button class="btn btn-ghost btn-sm" onclick="exportServicesCsv()">${iconPrinter()} Exporter</button></div>
+      <div class="page-head"><div><h1 class="page-title">Services</h1><p class="page-sub">Consultation et activation des services créés par les professionnels</p></div>${exportDropdownHtml("exportServicesCsv","exportServicesPdf")}</div>
       <div class="filter-row">
         <input type="text" placeholder="Rechercher un service, un professionnel…" value="${esc(state.servicesFilter.search)}" oninput="updateServicesFilter('search', this.value)" style="min-width:240px" />
         <select onchange="updateServicesFilter('actif', this.value)"><option value="">Publiés et non publiés</option><option value="true" ${state.servicesFilter.actif === "true" ? "selected" : ""}>Publiés</option><option value="false" ${state.servicesFilter.actif === "false" ? "selected" : ""}>Non publiés</option></select>
         <select onchange="updateServicesFilter('statut', this.value)"><option value="">Toutes les disponibilités</option>${Object.entries(STATUT_SERVICE).map(([k, v]) => `<option value="${k}" ${state.servicesFilter.statut === k ? "selected" : ""}>${v.label}</option>`).join("")}</select>
+        ${viewToggleHtml("services")}
       </div>
-      <div class="card"><table class="data-table"><thead><tr><th>Service</th><th>Professionnel</th><th>Durée</th><th>Prix</th><th>Publication</th><th>Disponibilité</th><th>Rendez-vous</th><th></th></tr></thead><tbody id="servicesTableBody"></tbody></table></div>
+      <div id="servicesViewContainer"></div>
     `;
     renderServicesTable();
   }
@@ -1089,23 +1117,44 @@ export default function AdminDashboard() {
     } catch (e) { showError(e); }
   }
   window.renderServicesTable = function renderServicesTable() {
-    const body = document.getElementById("servicesTableBody");
-    if (!body) return;
-    if (!SERVICES_VIEW.length) { body.innerHTML = `<tr><td colspan="8"><div class="table-empty">Aucun service trouvé</div></td></tr>`; return; }
-    body.innerHTML = SERVICES_VIEW.map((s) => {
-      const dispo = STATUT_SERVICE[s.statut] || STATUT_SERVICE.DISPONIBLE;
-      return `<tr>
-      <td><div class="cell-client-name">${esc(s.nom)}</div><div class="cell-client-sub">${esc(s.description || "")}</div></td>
-      <td>${esc(s.professionnel)}</td><td>${s.dureeMinutes} min</td><td>${fmtPrix(s.prix)}</td>
-      <td><span class="status-pill ${s.actif ? "st-termine" : "st-absent"}">${s.actif ? "Publié" : "Non publié"}</span></td>
-      <td><select onchange="setServiceDisponibilite('${s.id}', this.value)" title="Disponibilité affichée au client" style="font-size:11.5px;padding:4px 6px;">${Object.entries(STATUT_SERVICE).map(([k, v]) => `<option value="${k}" ${s.statut === k ? "selected" : ""}>${v.label}</option>`).join("")}</select></td>
-      <td>${s.nbRdv}</td>
-      <td><div class="row-actions">
-        <button class="icon-btn" title="${s.actif ? "Dépublier" : "Publier"}" onclick="toggleServiceStatut('${s.id}', ${s.actif ? "false" : "true"})">${s.actif ? iconX() : iconCheck()}</button>
-        ${s.nbRdv === 0 ? `<button class="icon-btn" title="Supprimer" onclick="askDeleteService('${s.id}','${escArg(s.nom)}')">${iconTrash()}</button>` : ""}
-      </div></td>
-    </tr>`;
-    }).join("");
+    const container = document.getElementById("servicesViewContainer");
+    if (!container) return;
+    if (!SERVICES_VIEW.length) { container.innerHTML = `<div class="card"><div class="table-empty">Aucun service trouvé</div></div>`; return; }
+    if (state.viewModes.services === "grille") {
+      container.innerHTML = `<div class="grid-cards">${SERVICES_VIEW.map((s) => {
+        const dispo = STATUT_SERVICE[s.statut] || STATUT_SERVICE.DISPONIBLE;
+        return `<div class="grid-card">
+          <div class="grid-card-media">${s.imageUrl ? `<img src="${esc(s.imageUrl)}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;grid-card-avatar&quot; style=&quot;background:${colorFor(s.id)}&quot;>${initials(s.nom)}</div>'" />` : `<div class="grid-card-avatar" style="background:${colorFor(s.id)}">${initials(s.nom)}</div>`}</div>
+          <div class="grid-card-body">
+            <div class="grid-card-name">${esc(s.nom)}</div>
+            <div class="grid-card-sub">${esc(s.professionnel)} · ${s.dureeMinutes} min · ${fmtPrix(s.prix)}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+              <span class="status-pill ${s.actif ? "st-termine" : "st-absent"}">${s.actif ? "Publié" : "Non publié"}</span>
+              <span class="status-pill ${dispo.cls}">${dispo.label}</span>
+            </div>
+            <div class="grid-card-actions">
+              <button class="icon-btn" title="${s.actif ? "Dépublier" : "Publier"}" onclick="toggleServiceStatut('${s.id}', ${s.actif ? "false" : "true"})">${s.actif ? iconX() : iconCheck()}</button>
+              ${s.nbRdv === 0 ? `<button class="icon-btn" title="Supprimer" onclick="askDeleteService('${s.id}','${escArg(s.nom)}')">${iconTrash()}</button>` : ""}
+            </div>
+          </div>
+        </div>`;
+      }).join("")}</div>`;
+    } else {
+      container.innerHTML = `<div class="card"><table class="data-table"><thead><tr><th>Service</th><th>Professionnel</th><th>Durée</th><th>Prix</th><th>Publication</th><th>Disponibilité</th><th>Rendez-vous</th><th></th></tr></thead><tbody>${SERVICES_VIEW.map((s) => {
+        const dispo = STATUT_SERVICE[s.statut] || STATUT_SERVICE.DISPONIBLE;
+        return `<tr>
+        <td><div class="cell-client"><div class="avatar-sm" style="background:${colorFor(s.id)};overflow:hidden;">${s.imageUrl ? `<img src="${esc(s.imageUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='${initials(s.nom)}'" />` : initials(s.nom)}</div><div><div class="cell-client-name">${esc(s.nom)}</div><div class="cell-client-sub">${esc(s.description || "")}</div></div></div></td>
+        <td>${esc(s.professionnel)}</td><td>${s.dureeMinutes} min</td><td>${fmtPrix(s.prix)}</td>
+        <td><span class="status-pill ${s.actif ? "st-termine" : "st-absent"}">${s.actif ? "Publié" : "Non publié"}</span></td>
+        <td><select onchange="setServiceDisponibilite('${s.id}', this.value)" title="Disponibilité affichée au client" style="font-size:11.5px;padding:4px 6px;">${Object.entries(STATUT_SERVICE).map(([k, v]) => `<option value="${k}" ${s.statut === k ? "selected" : ""}>${v.label}</option>`).join("")}</select></td>
+        <td>${s.nbRdv}</td>
+        <td><div class="row-actions">
+          <button class="icon-btn" title="${s.actif ? "Dépublier" : "Publier"}" onclick="toggleServiceStatut('${s.id}', ${s.actif ? "false" : "true"})">${s.actif ? iconX() : iconCheck()}</button>
+          ${s.nbRdv === 0 ? `<button class="icon-btn" title="Supprimer" onclick="askDeleteService('${s.id}','${escArg(s.nom)}')">${iconTrash()}</button>` : ""}
+        </div></td>
+      </tr>`;
+      }).join("")}</tbody></table></div>`;
+    }
   }
   window.exportServicesCsv = function exportServicesCsv() {
     const f = state.servicesFilter;
@@ -1250,7 +1299,7 @@ export default function AdminDashboard() {
         <div><h1 class="page-title">Domaines d'activité</h1><p class="page-sub">Classement des professionnels et filtres proposés sur la page publique</p></div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-primary btn-sm" onclick="openDomaineForm()">${iconPlus()} Nouveau domaine</button>
-          <button class="btn btn-ghost btn-sm" onclick="exportCsv('domaines','domaines.csv')">${iconPrinter()} Exporter</button>
+          ${exportDropdownHtml("exportDomainesCsv","exportDomainesPdf")}
         </div>
       </div>
       ${sansDomaine ? `<div class="card" style="background:linear-gradient(135deg,#FDF1E2,#FBE0BF);border-color:#F3D9AE;padding:14px 18px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:12.5px;color:#8A5A1E;">
@@ -1266,31 +1315,38 @@ export default function AdminDashboard() {
     if (!body) return;
     if (!DOMAINES.length) { body.innerHTML = `<tr><td colspan="6"><div class="table-empty">Aucun domaine défini — créez-en un pour classer vos professionnels</div></td></tr>`; return; }
     body.innerHTML = DOMAINES.map((d) => `<tr>
-      <td><div class="cell-client-name">${esc(d.nom)}</div></td>
+      <td><div class="cell-client-name">${esc(d.nom)}${d.principal ? ` <span class="status-pill st-reserve" title="Domaine choisi lors de la configuration initiale">Principal</span>` : ""}</div></td>
       <td style="color:var(--ink-soft);font-size:12px;">${esc(d.description || "—")}</td>
       <td>${d.nbProfessionnels}</td>
       <td><span class="status-pill ${d.actif ? "st-termine" : "st-absent"}">${d.actif ? "Visible" : "Masqué"}</span></td>
       <td>${d.ordre}</td>
       <td><div class="row-actions">
         <button class="icon-btn" title="Modifier" onclick="openDomaineForm('${d.id}')">${iconEdit()}</button>
-        <button class="icon-btn" title="${d.actif ? "Masquer" : "Rendre visible"}" onclick="toggleDomaineActif('${d.id}', ${d.actif ? "false" : "true"})">${d.actif ? iconX() : iconCheck()}</button>
-        ${d.nbProfessionnels === 0 ? `<button class="icon-btn" title="Supprimer" onclick="askDeleteDomaine('${d.id}','${escArg(d.nom)}')">${iconTrash()}</button>` : ""}
+        ${d.principal ? "" : `<button class="icon-btn" title="${d.actif ? "Masquer" : "Rendre visible"}" onclick="toggleDomaineActif('${d.id}', ${d.actif ? "false" : "true"})">${d.actif ? iconX() : iconCheck()}</button>`}
+        ${d.nbProfessionnels === 0 && !d.principal ? `<button class="icon-btn" title="Supprimer" onclick="askDeleteDomaine('${d.id}','${escArg(d.nom)}')">${iconTrash()}</button>` : ""}
       </div></td>
     </tr>`).join("");
   }
   window.openDomaineForm = function openDomaineForm(id) {
     const d = id ? DOMAINES.find((x) => x.id === id) : null;
     if (id && !d) { showToast("Domaine introuvable — actualisez la page"); return; }
+    const dejaConfigures = new Set(DOMAINES.map((x) => x.nom.trim().toLowerCase()));
+    const disponibles = CATALOGUE_DOMAINES.filter((n) => d ? n === d.nom : !dejaConfigures.has(n.toLowerCase()));
+    const champNom = d
+      ? `<input type="text" id="dmNom" value="${esc(d.nom)}" readonly style="background:var(--primary-soft);cursor:not-allowed;" />`
+      : disponibles.length
+        ? `<select id="dmNom">${disponibles.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>`
+        : `<input type="text" id="dmNom" value="" readonly placeholder="Tous les domaines du catalogue sont déjà configurés" style="background:var(--primary-soft);color:var(--ink-soft);" />`;
     openModal(`
-      <div class="modal-head"><div><p class="modal-title">${d ? "Modifier le domaine" : "Nouveau domaine d'activité"}</p><p class="modal-sub">${d ? esc(d.nom) : "Ex. Santé, Beauté, Conseil juridique…"}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="field-row"><label>Nom du domaine *</label><input type="text" id="dmNom" value="${esc(d?.nom || "")}" placeholder="Ex. Santé" /></div>
+      <div class="modal-head"><div><p class="modal-title">${d ? "Modifier le domaine" : "Ajouter un domaine"}</p><p class="modal-sub">${d ? esc(d.nom) : "Choisi parmi les domaines prévus par la plateforme"}</p></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="field-row"><label>Domaine d'activité *</label>${champNom}</div>
       <div class="field-row"><label>Description</label><textarea id="dmDesc" rows="2" placeholder="Courte description affichée côté public">${esc(d?.description || "")}</textarea></div>
       <div class="field-2col">
         <div class="field-row"><label>Ordre d'affichage</label><input type="number" min="0" id="dmOrdre" value="${d?.ordre ?? 0}" /></div>
         <div class="field-row"><label>Visibilité</label><select id="dmActif"><option value="true" ${d && !d.actif ? "" : "selected"}>Visible</option><option value="false" ${d && !d.actif ? "selected" : ""}>Masqué</option></select></div>
       </div>
-      <div class="field-hint">Un domaine masqué n'est plus proposé à la création de compte, mais les professionnels déjà rattachés le restent.</div>
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveDomaine(${d ? `'${d.id}'` : "null"})">${iconCheck()} ${d ? "Enregistrer" : "Créer le domaine"}</button></div>
+      <div class="field-hint">${d ? "Le nom d'un domaine du catalogue n'est pas modifiable ; ajustez sa description, son ordre ou sa visibilité." : "Ce sont les domaines prévus pour la plateforme : chacun ne peut être ajouté qu'une seule fois."}</div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveDomaine(${d ? `'${d.id}'` : "null"})" ${!d && !disponibles.length ? "disabled" : ""}>${iconCheck()} ${d ? "Enregistrer" : "Ajouter le domaine"}</button></div>
     `);
   }
   window.saveDomaine = async function saveDomaine(id) {
@@ -1332,43 +1388,72 @@ export default function AdminDashboard() {
 
   window.renderParamsPage = function renderParamsPage() {
     document.getElementById("page-params").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Paramètres généraux</h1><p class="page-sub">Ces informations sont affichées côté Client, dans l'interface publique</p></div></div>
-      <div class="card" style="padding:22px;max-width:640px;">
-        <div class="field-row"><label>Nom de la plateforme / de l'entreprise</label><input type="text" id="plName" value="${esc(PLATFORM.platformName)}" /></div>
-        <div class="field-row"><label>Description</label><textarea id="plDesc" rows="2" placeholder="À propos...">${esc(PLATFORM.description || "")}</textarea></div>
-        <div class="field-2col">
+      <div class="page-head"><div><h1 class="page-title">Paramètres généraux</h1><p class="page-sub">Ces informations sont affichées côté Client, dans l'interface publique</p></div><button class="btn btn-danger-ghost btn-sm" onclick="allerVersSupervision()">${iconRefresh()} Réinitialiser</button></div>
+      <div class="card" style="padding:22px;max-width:1180px;">
+        <div class="field-grid">
+          <div class="field-row"><label>Nom de la plateforme / de l'entreprise</label><input type="text" id="plName" value="${esc(PLATFORM.platformName)}" /></div>
+          <div class="field-row"><label>Slogan principal</label><input type="text" id="plSlogan" value="${esc(PLATFORM.slogan || "")}" placeholder="Votre rendez-vous, simplifié." /></div>
           <div class="field-row"><label>Téléphone de contact</label><input type="text" id="plPhone" value="${esc(PLATFORM.phone || "")}" /></div>
           <div class="field-row"><label>E-mail de contact</label><input type="email" id="plEmail" value="${esc(PLATFORM.email || "")}" /></div>
-        </div>
-        <div class="field-row"><label>Adresse</label><input type="text" id="plAddress" value="${esc(PLATFORM.address || "")}" /></div>
-        <div class="field-row"><label>Jours ouvrables par défaut</label>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${JOURS.map((d) => `<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;border:1px solid var(--line);padding:6px 10px;border-radius:8px;background:linear-gradient(135deg,#FBFAFF,#F4EFFF);"><input type="checkbox" id="jour_${d}" ${(PLATFORM.joursOuvrables || []).includes(d) ? "checked" : ""} /> ${d}</label>`).join("")}
+          <div class="field-row"><label>Adresse</label><input type="text" id="plAddress" value="${esc(PLATFORM.address || "")}" /></div>
+          <div class="field-row"><label>Horaires généraux par défaut</label><input type="text" id="plHoraires" value="${esc(PLATFORM.horairesGeneraux || "")}" placeholder="09:00 – 18:00" /></div>
+          <div class="field-row"><label>Nombre de personnes de l'équipe</label><input type="number" min="1" id="plEquipe" value="${PLATFORM.tailleEquipe ?? ""}" placeholder="Illimité" />
+            <div class="field-hint">Professionnels + réceptionnistes (comptes actifs ou en attente) : <b>${PLATFORM.equipeActuelle ?? 0}${PLATFORM.tailleEquipe ? " / " + PLATFORM.tailleEquipe : ""}</b>. Une fois ce nombre atteint, plus aucun compte ne peut être créé (inscription ou création par l'Admin) : augmentez-le pour accueillir une nouvelle personne. Laissez vide pour ne pas limiter.</div>
           </div>
+          <div class="field-row field-full"><label>Description</label><textarea id="plDesc" rows="2" placeholder="À propos...">${esc(PLATFORM.description || "")}</textarea></div>
+          <div class="field-row field-full"><label>Jours ouvrables par défaut</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              ${JOURS.map((d) => `<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;border:1px solid var(--line);padding:6px 10px;border-radius:8px;background:linear-gradient(135deg,#FBFAFF,#F4EFFF);"><input type="checkbox" id="jour_${d}" ${(PLATFORM.joursOuvrables || []).includes(d) ? "checked" : ""} /> ${d}</label>`).join("")}
+            </div>
+          </div>
+          <div class="field-row field-full">
+            <label>Lien de localisation (carte)</label>
+            <input type="text" id="plLoc" value="${esc(PLATFORM.localisationUrl || "")}" placeholder="https://www.google.com/maps/place/…" />
+            <div class="field-hint">Le plus fiable : Google Maps → « Partager » → onglet « Intégrer une carte » → copiez le code HTML et collez-le ici. Un lien classique (google.com/maps/place/…) fonctionne aussi ; un lien court maps.app.goo.gl utilisera l'adresse ci-dessus.</div>
+          </div>
+          <div class="field-row field-full"><label>Conditions générales</label><textarea id="plConditions" rows="2">${esc(PLATFORM.conditions || "")}</textarea></div>
+          <div class="field-row field-full"><label>Conditions affichées au moment de réserver</label><textarea id="plCondRes" rows="2" placeholder="Texte présenté au client avant validation…">${esc(PLATFORM.conditionsReservation || "")}</textarea></div>
+          <div class="field-row">
+            <label>Logo de la plateforme</label>
+            <div class="img-choix">
+              <div class="img-apercu vide" id="plLogoApercu"></div>
+              <div class="img-choix-actions">
+                <label class="btn btn-ghost btn-sm" style="cursor:pointer;">Choisir une image<input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="televerserImageAdmin(this,'plLogo','plLogoApercu','logo')" /></label>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="retirerImageAdmin('plLogo','plLogoApercu')">Retirer</button>
+              </div>
+            </div>
+            <input type="hidden" id="plLogo" value="${esc(PLATFORM.logoUrl || "")}" />
+          </div>
+          <div class="field-row">
+            <label>Image d'accueil (hero)</label>
+            <div class="img-choix">
+              <div class="img-apercu vide" id="plHeroApercu"></div>
+              <div class="img-choix-actions">
+                <label class="btn btn-ghost btn-sm" style="cursor:pointer;">Choisir une image<input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="televerserImageAdmin(this,'plHero','plHeroApercu','hero')" /></label>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="retirerImageAdmin('plHero','plHeroApercu')">Retirer</button>
+              </div>
+            </div>
+            <input type="hidden" id="plHero" value="${esc(PLATFORM.heroImageUrl || "")}" />
+          </div>
+          <div class="field-row field-full"><div class="field-hint">JPG, PNG ou WebP · 5 Mo max chacun.</div></div>
         </div>
-        <div class="field-row"><label>Horaires généraux par défaut</label><input type="text" id="plHoraires" value="${esc(PLATFORM.horairesGeneraux || "")}" placeholder="09:00 – 18:00" /></div>
-        <div class="field-row"><label>Slogan principal</label><input type="text" id="plSlogan" value="${esc(PLATFORM.slogan || "")}" placeholder="Votre rendez-vous, simplifié." /></div>
-        <div class="field-row"><label>Conditions générales</label><textarea id="plConditions" rows="2">${esc(PLATFORM.conditions || "")}</textarea></div>
-        <div class="field-row"><label>Conditions affichées au moment de réserver</label><textarea id="plCondRes" rows="2" placeholder="Texte présenté au client avant validation…">${esc(PLATFORM.conditionsReservation || "")}</textarea></div>
-        <div class="field-2col">
-          <div class="field-row"><label>URL du logo</label><input type="text" id="plLogo" value="${esc(PLATFORM.logoUrl || "")}" placeholder="https://…" /></div>
-          <div class="field-row"><label>Image d'accueil (hero)</label><input type="text" id="plHero" value="${esc(PLATFORM.heroImageUrl || "")}" placeholder="https://…" /></div>
-        </div>
-        <div class="field-row"><label>Lien de localisation (carte)</label><input type="text" id="plLoc" value="${esc(PLATFORM.localisationUrl || "")}" placeholder="https://maps…" /></div>
-        <div class="field-hint">Domaine principal de l'instance : <b>${esc(PLATFORM.domaine || "non défini")}</b> (fixé lors de la configuration initiale).</div>
+        <div class="field-hint" style="margin-top:8px;">Domaine principal de l'instance : <b>${esc(PLATFORM.domaine || "non défini")}</b> (fixé lors de la configuration initiale).</div>
       </div>
-      <div class="card" style="padding:22px;max-width:640px;margin-top:18px;">
+      <div class="card" style="padding:22px;max-width:1180px;margin-top:18px;">
         <h3 style="margin:0 0 4px;font-size:14.5px;">Règles d'annulation et de report</h3>
         <p class="page-sub" style="margin:0 0 14px;">Appliquées côté client lorsqu'il gère son rendez-vous depuis son lien de suivi.</p>
-        <div class="field-2col">
+        <div class="field-grid">
           <div class="field-row"><label>Délai minimum avant annulation (heures)</label><input type="number" min="0" id="plDelaiAnnul" value="${PLATFORM.delaiMinAnnulationHeures ?? 0}" /></div>
           <div class="field-row"><label>Délai minimum avant modification (heures)</label><input type="number" min="0" id="plDelaiModif" value="${PLATFORM.delaiMinModificationHeures ?? 48}" /></div>
+          <div class="field-row"><label>Nombre de reports autorisés par rendez-vous</label><input type="number" min="0" id="plMaxChang" value="${PLATFORM.maxChangementsRdv ?? 1}" /></div>
         </div>
-        <div class="field-row"><label>Nombre de reports autorisés par rendez-vous</label><input type="number" min="0" id="plMaxChang" value="${PLATFORM.maxChangementsRdv ?? 1}" /></div>
         <button class="btn btn-primary" onclick="savePlatform()">${iconCheck()} Enregistrer les paramètres</button>
       </div>
     `;
+    apercuImageAdmin("plLogoApercu", "plLogo");
+    apercuImageAdmin("plHeroApercu", "plHero");
   }
+  window.allerVersSupervision = function allerVersSupervision() { navigate("/admin/supervision"); }
   window.savePlatform = async function savePlatform() {
     const data = {
       platformName: val("plName"),
@@ -1385,19 +1470,71 @@ export default function AdminDashboard() {
       delaiMinAnnulationHeures: Number(val("plDelaiAnnul")) || 0,
       delaiMinModificationHeures: Number(val("plDelaiModif")) || 0,
       maxChangementsRdv: Number(val("plMaxChang")) || 0,
+      tailleEquipe: val("plEquipe") ? Math.max(1, Math.floor(Number(val("plEquipe")))) : null,
       joursOuvrables: JOURS.filter((d) => document.getElementById("jour_" + d)?.checked),
     };
     if (val("plEmail")) data.email = val("plEmail");
     try {
       PLATFORM = { ...PLATFORM, ...(await adminApi.updateParams(data)) };
       showToast("Paramètres généraux enregistrés");
+      renderParamsPage();
       updateBadges();
     } catch (e) { showError(e); }
   }
+  window.apercuImageAdmin = function apercuImageAdmin(boiteId, champId) {
+    const boite = document.getElementById(boiteId);
+    if (!boite) return;
+    const adresse = (document.getElementById(champId)?.value || "").trim();
+    boite.innerHTML = "";
+    boite.classList.remove("cassee");
+    boite.classList.toggle("vide", !adresse);
+    if (!adresse) return;
+    const img = document.createElement("img");
+    img.alt = "";
+    img.addEventListener("error", () => { boite.innerHTML = ""; boite.classList.add("vide", "cassee"); });
+    img.src = adresse;
+    boite.appendChild(img);
+  }
+
+  window.retirerImageAdmin = function retirerImageAdmin(champId, boiteId) {
+    const champ = document.getElementById(champId);
+    if (champ) champ.value = "";
+    apercuImageAdmin(boiteId, champId);
+  }
+
+  /**
+   * Envoi d'une image choisie sur l'ordinateur (photo de professionnel, logo,
+   * image d'accueil). Le serveur la redimensionne, la convertit en WebP et
+   * renvoie son adresse publique, rangée dans le champ caché correspondant.
+   */
+  window.televerserImageAdmin = async function televerserImageAdmin(input, champId, boiteId, type) {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
+      showToast("Format non supporté (JPG, PNG ou WebP)."); input.value = ""; return;
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      showToast("Image trop lourde (5 Mo maximum)."); input.value = ""; return;
+    }
+    const boite = document.getElementById(boiteId);
+    if (boite) boite.classList.add("chargement");
+    try {
+      const { url } = await adminApi.uploadImage(f, type);
+      document.getElementById(champId).value = url;
+      apercuImageAdmin(boiteId, champId);
+      showToast("Image téléversée — pensez à enregistrer.");
+    } catch (err) {
+      showError(err);
+    } finally {
+      if (boite) boite.classList.remove("chargement");
+      input.value = "";
+    }
+  }
+
   window.renderAuditPage = function renderAuditPage() {
     const f = state.auditFilter;
     document.getElementById("page-audit").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Journal d'audit</h1><p class="page-sub">Traçabilité des actions sensibles de la plateforme</p></div><button class="btn btn-ghost btn-sm" onclick="exportAuditCsv()">${iconPrinter()} Exporter</button></div>
+      <div class="page-head"><div><h1 class="page-title">Journal d'audit</h1><p class="page-sub">Traçabilité des actions sensibles de la plateforme</p></div>${exportDropdownHtml("exportAuditCsv","exportAuditPdf")}</div>
       <div class="filter-row">
         <select onchange="updateAuditFilter('action', this.value)"><option value="">Toutes les actions</option>${AUDIT.actions.map((a) => `<option value="${a}" ${f.action === a ? "selected" : ""}>${a}</option>`).join("")}</select>
         <input type="date" value="${f.from}" onchange="updateAuditFilter('from', this.value)" title="À partir du" />
@@ -1442,20 +1579,6 @@ export default function AdminDashboard() {
     }
   }
 
-  const NOTIF_ICONS = {
-    new: { bg: "linear-gradient(135deg,#E9E3FF,#D5C8FF)", color: "#7350E8", svg: '<path d="M12 5v14M5 12h14"/>' },
-    warn: { bg: "linear-gradient(135deg,#FDF1E2,#FBE0BF)", color: "#E2954A", svg: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>' },
-  };
-  window.notifRowHtml = function notifRowHtml(n) {
-    const ic = NOTIF_ICONS[n.type] || NOTIF_ICONS.new;
-    return `<div class="notif-row ${n.unread ? "unread" : ""}"><div class="notif-icon" style="background:${ic.bg};color:${ic.color}">${svg(ic.svg, 16)}</div><div class="notif-text"><span>${n.text}</span><div class="notif-time">${n.time}</div></div>${n.unread ? `<span class="notif-dot-unread"></span>` : ""}</div>`;
-  }
-  window.renderNotifsPage = function renderNotifsPage() {
-    document.getElementById("page-notifs").innerHTML = `
-      <div class="page-head"><div><h1 class="page-title">Notifications</h1><p class="page-sub">Inscriptions en attente, événements de la plateforme et annonces diffusées</p></div><div style="display:flex;gap:8px;"><button class="btn btn-primary btn-sm" onclick="openAnnonce()">${iconSend()} Nouvelle annonce</button><button class="btn btn-ghost btn-sm" onclick="refreshAll()">${iconRefresh()} Actualiser</button><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Tout marquer comme lu</button></div></div>
-      <div class="card">${NOTIFS.length ? NOTIFS.map((n) => notifRowHtml(n)).join("") : `<div class="table-empty">Aucune notification</div>`}</div>
-    `;
-  }
   window.openAnnonce = function openAnnonce(scope) {
     const selection = scope ? [...SELECTION[scope]] : [];
     openModal(`
@@ -1481,19 +1604,50 @@ export default function AdminDashboard() {
       showToast(esc(res.message));
     } catch (e) { showError(e); }
   }
-  window.markAllRead = async function markAllRead() {
-    try {
-      await adminApi.markNotificationsRead();
-      NOTIFS = NOTIFS.map((n) => ({ ...n, unread: false }));
-      renderNotifsPage();
-      updateBadges();
-      showToast("Notifications marquées comme lues");
-    } catch (e) { showError(e); }
-  }
-
   window.exportCsv = async function exportCsv(entity, filename, params) {
     try { await adminApi.downloadExport(entity, filename, params); showToast(`${iconPrinter()} Export « ${filename} » téléchargé`); }
     catch (e) { showError(e); }
+  }
+  window.exportPdf = async function exportPdf(entity, filenameBase, params) {
+    try { await adminApi.downloadExport(entity, `${filenameBase}.pdf`, params, "pdf"); showToast(`${iconPrinter()} Export « ${filenameBase}.pdf » téléchargé`); }
+    catch (e) { showError(e); }
+  }
+  window.exportProsPdf = function exportProsPdf() {
+    const f = state.proFilter;
+    exportPdf("professionnels", "professionnels", {
+      statut: f.statut ? STATUT_API[f.statut] : undefined, search: f.search || undefined, domaineId: f.domaineId || undefined,
+    });
+  }
+  window.exportRecsPdf = function exportRecsPdf() {
+    const f = state.recFilter;
+    exportPdf("receptionnistes", "receptionnistes", { statut: f.statut ? STATUT_API[f.statut] : undefined, search: f.search || undefined });
+  }
+  window.exportClientsCsv = function exportClientsCsv() {
+    exportCsv("clients", "clients.csv", { search: state.clientsFilter.search || undefined });
+  }
+  window.exportClientsPdf = function exportClientsPdf() {
+    exportPdf("clients", "clients", { search: state.clientsFilter.search || undefined });
+  }
+  window.exportRdvPdf = function exportRdvPdf() {
+    const f = state.rdvFilter;
+    exportPdf("rendez-vous", "rendez-vous", {
+      statut: f.statut || undefined, professionnelId: f.professionnelId || undefined,
+      from: f.from || undefined, to: f.to || undefined, search: f.search || undefined,
+    });
+  }
+  window.exportServicesPdf = function exportServicesPdf() {
+    const f = state.servicesFilter;
+    exportPdf("services", "services", { search: f.search || undefined, actif: f.actif || undefined, statut: f.statut || undefined });
+  }
+  window.exportAuditPdf = function exportAuditPdf() {
+    const f = state.auditFilter;
+    exportPdf("audit", "journal-audit", { action: f.action || undefined, from: f.from || undefined, to: f.to || undefined });
+  }
+  window.exportDomainesCsv = function exportDomainesCsv() {
+    exportCsv("domaines", "domaines.csv");
+  }
+  window.exportDomainesPdf = function exportDomainesPdf() {
+    exportPdf("domaines", "domaines");
   }
 
   window.closeModal = function closeModal() {
@@ -1518,7 +1672,9 @@ export default function AdminDashboard() {
 
   (async () => {
     await loadAll();
-    if (!ac.signal.aborted) renderPage(state.page);
+    if (ac.signal.aborted) return;
+    const depart = (window.history.state && window.history.state.usr && window.history.state.usr.page) || "dashboard";
+    if (depart !== "dashboard") goToPage(depart); else renderPage(state.page);
   })();
 
     // ---- end ported script ----
@@ -1572,6 +1728,7 @@ export default function AdminDashboard() {
       delete (window as any).reloadPros;
       delete (window as any).renderProsTable;
       delete (window as any).exportProsCsv;
+      delete (window as any).exportProsPdf;
       delete (window as any).filtrerProsSansDomaine;
       delete (window as any).toggleSelection;
       delete (window as any).toggleAllSelection;
@@ -1586,8 +1743,6 @@ export default function AdminDashboard() {
       delete (window as any).saveChangeEmail;
       delete (window as any).setProDomaine;
       delete (window as any).setCompteStatut;
-      delete (window as any).openCreateCompte;
-      delete (window as any).saveCompte;
       delete (window as any).openResetPassword;
       delete (window as any).saveResetPassword;
       delete (window as any).askDeleteCompte;
@@ -1597,6 +1752,7 @@ export default function AdminDashboard() {
       delete (window as any).reloadRecs;
       delete (window as any).renderRecTable;
       delete (window as any).exportRecsCsv;
+      delete (window as any).exportRecsPdf;
       delete (window as any).openAffectForm;
       delete (window as any).saveAffect;
       delete (window as any).openPermissions;
@@ -1622,6 +1778,7 @@ export default function AdminDashboard() {
       delete (window as any).loadMoreRdv;
       delete (window as any).openRdvFiche;
       delete (window as any).exportRdvCsv;
+      delete (window as any).exportRdvPdf;
       delete (window as any).openDeplacerRdv;
       delete (window as any).confirmDeplacerRdv;
       delete (window as any).openAnnulerRdv;
@@ -1632,6 +1789,7 @@ export default function AdminDashboard() {
       delete (window as any).renderServicesTable;
       delete (window as any).toggleServiceStatut;
       delete (window as any).exportServicesCsv;
+      delete (window as any).exportServicesPdf;
       delete (window as any).setServiceDisponibilite;
       delete (window as any).askDeleteService;
       delete (window as any).confirmDeleteService;
@@ -1651,6 +1809,7 @@ export default function AdminDashboard() {
       delete (window as any).askDeleteDomaine;
       delete (window as any).confirmDeleteDomaine;
       delete (window as any).renderParamsPage;
+      delete (window as any).allerVersSupervision;
       delete (window as any).savePlatform;
       delete (window as any).renderAuditPage;
       delete (window as any).updateAuditFilter;
@@ -1658,12 +1817,21 @@ export default function AdminDashboard() {
       delete (window as any).loadMoreAudit;
       delete (window as any).renderAuditTable;
       delete (window as any).exportAuditCsv;
-      delete (window as any).notifRowHtml;
-      delete (window as any).renderNotifsPage;
+      delete (window as any).exportAuditPdf;
+      delete (window as any).apercuImageAdmin;
+      delete (window as any).retirerImageAdmin;
+      delete (window as any).televerserImageAdmin;
       delete (window as any).openAnnonce;
       delete (window as any).sendAnnonce;
-      delete (window as any).markAllRead;
       delete (window as any).exportCsv;
+      delete (window as any).exportPdf;
+      delete (window as any).exportClientsCsv;
+      delete (window as any).exportClientsPdf;
+      delete (window as any).toggleExportMenu;
+      delete (window as any).closeExportMenus;
+      delete (window as any).exportDropdownHtml;
+      delete (window as any).exportDomainesCsv;
+      delete (window as any).exportDomainesPdf;
       delete (window as any).closeModal;
       delete (window as any).openModal;
     };
@@ -2124,6 +2292,27 @@ export default function AdminDashboard() {
     transition: border-color .15s ease, box-shadow .15s ease;
   }
   .filter-row select:focus, .filter-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(115, 80, 232, 0.18); background: #fff; }
+
+  /* ---------- Bascule Grille / Liste ---------- */
+  .icon-btn-active { background: var(--grad-primary); color: #fff; border-color: transparent; box-shadow: 0 6px 14px rgba(115, 80, 232, 0.35); }
+
+  /* ---------- Menu déroulant d'export ---------- */
+  .export-wrap { position: relative; display: inline-block; }
+  .export-dropdown { display: none; position: absolute; top: calc(100% + 7px); right: 0; min-width: 150px; padding: 6px; background: var(--card); border: 1.5px solid var(--primary-soft); border-radius: 12px; box-shadow: 0 12px 30px rgba(115,80,232,.2); z-index: 1000; }
+  .export-dropdown.show { display: block; }
+  .export-dropdown button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: none; border-radius: 8px; background: transparent; color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; }
+  .export-dropdown button:hover { background: var(--primary-soft); color: var(--primary); }
+  .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .grid-card { background: var(--card); border: 1.5px solid var(--line); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+  .grid-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(115, 80, 232, 0.22); border-color: var(--primary-light); }
+  .grid-card-media { width: 100%; height: 120px; background: var(--grad-soft); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .grid-card-media img { width: 100%; height: 100%; object-fit: cover; }
+  .grid-card-avatar { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 20px; }
+  .grid-card-body { padding: 12px 14px 14px; }
+  .grid-card-name { font-weight: 700; font-size: 13px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grid-card-sub { font-size: 11px; color: var(--ink-soft); margin-bottom: 6px; }
+  .grid-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+
   table.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   table.data-table th {
     text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
@@ -2162,21 +2351,6 @@ export default function AdminDashboard() {
 
   .table-empty { padding: 40px 20px; text-align: center; color: var(--ink-soft); font-size: 13px; }
 
-  /* ---------- Notifications ---------- */
-  .notif-row { display: flex; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); align-items: flex-start; }
-  .notif-row:last-child { border-bottom: none; }
-  .notif-row.unread { background: var(--grad-soft-horizontal); }
-  .notif-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .notif-text { font-size: 12.5px; line-height: 1.5; }
-  .notif-text b { font-weight: 700; }
-  .notif-time { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
-  .notif-dot-unread {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--grad-primary);
-    margin-left: auto; margin-top: 6px; flex-shrink: 0;
-    box-shadow: 0 0 10px rgba(115, 80, 232, 0.8);
-  }
-
   /* ---------- Modals ---------- */
   .modal-overlay { position: fixed; inset: 0; background: rgba(58, 32, 144, 0.55); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; transition: opacity .2s ease; }
   .modal-overlay.open { opacity: 1; }
@@ -2211,6 +2385,8 @@ export default function AdminDashboard() {
     box-shadow: 0 0 0 3px rgba(115, 80, 232, 0.18);
   }
   .field-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 20px; align-items: start; }
+  .field-grid .field-full { grid-column: 1 / -1; }
   .field-hint { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
   .field-error { font-size: 11.5px; color: var(--st-annule); margin-top: 4px; display: none; }
   .field-error.show { display: block; }
@@ -2244,6 +2420,7 @@ export default function AdminDashboard() {
     .sidebar { position: fixed; z-index: 50; left: -260px; transition: left .25s ease; }
     .sidebar.mobile-open { left: 0; }
     .field-2col { grid-template-columns: 1fr; }
+    .field-grid { grid-template-columns: 1fr; }
     .detail-grid { grid-template-columns: 1fr; }
   }
       `}</style>
@@ -2294,10 +2471,6 @@ export default function AdminDashboard() {
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           <span className="nav-label">Agendas</span>
         </div>
-        <div className="nav-item" data-page="absences">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          <span className="nav-label">Absences</span>
-        </div>
         <div className="sb-section-title">Plateforme</div>
         <div className="nav-item" data-page="domaines">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
@@ -2311,11 +2484,6 @@ export default function AdminDashboard() {
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           <span className="nav-label">Journal d&apos;audit</span>
         </div>
-        <div className="nav-item" data-page="notifs">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-          <span className="nav-label">Notifications</span>
-          <span className="nav-badge" id="navNotifBadge">0</span>
-        </div>
       </nav>
     </aside>
 
@@ -2327,10 +2495,6 @@ export default function AdminDashboard() {
           <input type="text" id="globalSearch" placeholder="Rechercher un utilisateur, un client…" />
         </div>
         <div className="tb-right">
-          <button className="tb-icon-btn" id="notifBellBtn">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-            <span className="tb-icon-dot" id="tbNotifDot">0</span>
-          </button>
           <div className="tb-profile-wrap">
             <div className="tb-user" id="profileBtn">
               <div className="tb-avatar">{(account?.email || '?').slice(0, 2).toUpperCase()}</div>
@@ -2345,6 +2509,12 @@ export default function AdminDashboard() {
                   <span>Administrateur</span>
                 </div>
               </div>
+              {account?.role === 'PROFESSIONNEL' && (
+                <button className="profile-menu-item" id="backProBtn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/><path d="M20 21v-2a4 4 0 0 0-4-4H9"/></svg>
+                  Retour à l&apos;espace Professionnel
+                </button>
+              )}
               <button className="profile-menu-item danger" id="logoutBtn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 Déconnexion
@@ -2362,11 +2532,9 @@ export default function AdminDashboard() {
       <section className="page" id="page-rdv"></section>
       <section className="page" id="page-services"></section>
       <section className="page" id="page-agendas"></section>
-      <section className="page" id="page-absences"></section>
       <section className="page" id="page-domaines"></section>
       <section className="page" id="page-params"></section>
       <section className="page" id="page-audit"></section>
-      <section className="page" id="page-notifs"></section>
     </div>
   </div>
 

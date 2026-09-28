@@ -1380,11 +1380,12 @@ export default function ProfessionnelDashboard() {
           <div class="img-choix">
             <div class="img-apercu vide" id="svImageApercu"></div>
             <div class="img-choix-actions">
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer;">Choisir une image<input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="televerserImage(this,'svImage','svImageApercu','service')" /></label>
               <button type="button" class="btn btn-ghost btn-sm" onclick="retirerImageService()">Retirer</button>
             </div>
           </div>
-          <input type="url" id="svImage" value="${v.imageUrl}" placeholder="https://…" oninput="rafraichirApercuService()" />
-          <div class="field-hint">Collez l'adresse d'une image hébergée ailleurs.</div>
+          <input type="hidden" id="svImage" value="${v.imageUrl}" />
+          <div class="field-hint">JPG, PNG ou WebP · 5 Mo max. Choisissez un fichier depuis votre ordinateur.</div>
         </div>
       </div>
       <div id="svTabChamps" style="display:${tab === 'champs' ? 'block' : 'none'}">
@@ -1404,25 +1405,62 @@ export default function ProfessionnelDashboard() {
      * l'adresse vient de l'utilisateur, l'insérer dans du HTML la laisserait
      * s'échapper de l'attribut.
      */
-    window.rafraichirApercuService = function rafraichirApercuService() {
-      const boite = document.getElementById("svImageApercu");
+    window.apercuImage = function apercuImage(boiteId, champId) {
+      const boite = document.getElementById(boiteId);
       if (!boite) return;
-      const adresse = (document.getElementById("svImage")?.value || "").trim();
+      const adresse = (document.getElementById(champId)?.value || "").trim();
       boite.innerHTML = "";
+      boite.classList.remove("cassee");
       boite.classList.toggle("vide", !adresse);
       if (!adresse) return;
       const img = document.createElement("img");
       img.alt = "";
       img.addEventListener("error", () => { boite.innerHTML = ""; boite.classList.add("vide", "cassee"); });
-      img.addEventListener("load", () => boite.classList.remove("cassee"));
       img.src = M.urlImage(adresse);
       boite.appendChild(img);
     }
 
-    window.retirerImageService = function retirerImageService() {
-      const champ = document.getElementById("svImage");
+    window.rafraichirApercuService = function rafraichirApercuService() {
+      apercuImage("svImageApercu", "svImage");
+    }
+
+    window.retirerImage = function retirerImage(champId, boiteId) {
+      const champ = document.getElementById(champId);
       if (champ) champ.value = "";
-      rafraichirApercuService();
+      apercuImage(boiteId, champId);
+    }
+
+    window.retirerImageService = function retirerImageService() {
+      retirerImage("svImage", "svImageApercu");
+    }
+
+    /**
+     * Envoi d'une image choisie sur l'ordinateur. Le serveur la redimensionne,
+     * la convertit en WebP et renvoie son adresse : elle est rangée dans le
+     * champ caché, donc l'enregistrement du formulaire reste inchangé.
+     */
+    window.televerserImage = async function televerserImage(input, champId, boiteId, type) {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
+        showToast("Format non supporté (JPG, PNG ou WebP)."); input.value = ""; return;
+      }
+      if (f.size > 5 * 1024 * 1024) {
+        showToast("Image trop lourde (5 Mo maximum)."); input.value = ""; return;
+      }
+      const boite = document.getElementById(boiteId);
+      if (boite) boite.classList.add("chargement");
+      try {
+        const { url } = await professionnelApi.uploadImage(f, type);
+        document.getElementById(champId).value = url;
+        apercuImage(boiteId, champId);
+        showToast("Image téléversée — pensez à enregistrer.");
+      } catch (err) {
+        showToast(M.messageErreur(err));
+      } finally {
+        if (boite) boite.classList.remove("chargement");
+        input.value = "";
+      }
     }
 
     window.switchServiceTab = function switchServiceTab(btn, tab) {
@@ -2249,13 +2287,20 @@ export default function ProfessionnelDashboard() {
         </div>
         <div class="field-row">
           <label>Photo du bureau</label>
-          <input type="url" id="prPhoto" value="${PROFILE.photoUrl || ""}" placeholder="https://…" />
-          <div class="field-hint">Collez l'adresse d'une image hébergée ailleurs.</div>
+          <div class="img-choix">
+            <div class="img-apercu vide" id="prPhotoApercu"></div>
+            <div class="img-choix-actions">
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer;">Choisir une image<input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="televerserImage(this,'prPhoto','prPhotoApercu','profil')" /></label>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="retirerImage('prPhoto','prPhotoApercu')">Retirer</button>
+            </div>
+          </div>
+          <input type="hidden" id="prPhoto" value="${PROFILE.photoUrl || ""}" />
+          <div class="field-hint">JPG, PNG ou WebP · 5 Mo max. Choisissez un fichier depuis votre ordinateur.</div>
         </div>
-        ${PROFILE.photoUrl ? `<img src="${PROFILE.photoUrl}" alt="Photo du bureau" style="max-width:220px;border-radius:10px;border:1px solid var(--line);margin-bottom:14px;" />` : ""}
         <button class="btn btn-primary" onclick="saveProfile()">${iconCheck()} Enregistrer les modifications</button>
       </div>
     `;
+      apercuImage("prPhotoApercu", "prPhoto");
     }
     window.saveProfile = async function saveProfile() {
       const charge = {
@@ -2696,6 +2741,9 @@ export default function ProfessionnelDashboard() {
       delete (window as any).openServiceForm;
       delete (window as any).rafraichirApercuService;
       delete (window as any).retirerImageService;
+      delete (window as any).apercuImage;
+      delete (window as any).retirerImage;
+      delete (window as any).televerserImage;
       delete (window as any).switchServiceTab;
       delete (window as any).cfFieldLabel;
       delete (window as any).cfTypeLabel;

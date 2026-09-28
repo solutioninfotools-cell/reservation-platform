@@ -11,6 +11,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 import { ReceptionnisteService } from './receptionniste.service';
 import { CreateRdvDto } from '../appointments/dto/create-rdv.dto';
+import { UpdateParametresDto } from '../professionnel/dto/parametres.dto';
 
 @ApiTags('receptionniste')
 @ApiBearerAuth()
@@ -169,4 +170,32 @@ getCreneaux(
     professionnelId
   );
 }
+  // ---------- Paramètres de réservation du professionnel ----------
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('peutGererParametres')
+  @Get('professionnels/:professionnelId/parametres')
+  getParametres(
+    @CurrentUser() user: any,
+    @Param('professionnelId') professionnelId: string
+  ) {
+    return this.receptionnisteService.getParametres(
+      user.userId,
+      professionnelId
+    );
+  }
+
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('peutGererParametres')
+  @Patch('professionnels/:professionnelId/parametres')
+  updateParametres(
+    @CurrentUser() user: any,
+    @Param('professionnelId') professionnelId: string,
+    @Body() dto: UpdateParametresDto
+  ) {
+    return this.receptionnisteService.updateParametres(
+      user.userId,
+      professionnelId,
+      dto
+    );
+  }
 }

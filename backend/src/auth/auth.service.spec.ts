@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
@@ -5,6 +6,7 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { UnauthorizedException } from '@nestjs/common';
 
 /**
@@ -31,6 +33,7 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: JwtService, useValue: { sign: () => 'fake.jwt.token' } },
         { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: NotificationsService, useValue: { notifyAdmins: jest.fn() } },
         { provide: EmailService, useValue: { send: jest.fn(), generateCode: () => '123456' } },
       ],
     }).compile();

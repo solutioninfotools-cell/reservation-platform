@@ -7,6 +7,13 @@ import { api } from './client';
  * Le backend reste l'unique autorité (rôles vérifiés côté serveur).
  */
 export const adminApi = {
+  /** Téléverse une image (JPG/PNG/WebP) ; le serveur renvoie { url }. type : 'profil' | 'logo' | 'hero'. */
+  uploadImage: (file: File, type: 'profil' | 'logo' | 'hero') => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post(`/admin/upload-image?type=${type}`, fd).then((r) => r.data as { url: string });
+  },
+
   // ---- Professionnels ----
   listPros: (params?: { statut?: string; search?: string; domaineId?: string }) =>
     api.get('/admin/professionnels', { params }).then((r) => r.data),
@@ -144,12 +151,15 @@ export const adminApi = {
   // ---- Notifications (flux générique du compte connecté) ----
   notifications: () => api.get('/notifications').then((r) => r.data),
   markNotificationsRead: () => api.patch('/notifications/read-all').then((r) => r.data),
+  markNotificationRead: (id: string) => api.patch(`/notifications/${id}/read`).then((r) => r.data),
 
   // ---- Exports CSV ----
   // `params` reprend les filtres affichés : l'export porte sur ce que l'on voit.
-  downloadExport: async (entity: string, filename: string, params?: Record<string, unknown>) => {
-    const res = await api.get(`/admin/export/${entity}`, { responseType: 'blob', params });
-    const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8;' }));
+  downloadExport: async (entity: string, filename: string, params?: Record<string, unknown>, format: 'csv' | 'pdf' = 'csv') => {
+    const path = format === 'pdf' ? `/admin/export-pdf/${entity}` : `/admin/export/${entity}`;
+    const mime = format === 'pdf' ? 'application/pdf' : 'text/csv;charset=utf-8;';
+    const res = await api.get(path, { responseType: 'blob', params });
+    const url = URL.createObjectURL(new Blob([res.data], { type: mime }));
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;

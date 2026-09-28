@@ -12,6 +12,7 @@ model SystemConfig {
   id                         String           @id @default(uuid())
   isConfigured               Boolean          @default(false)
   modeSupervision            ModeSupervision?
+  superviseurUserId          String?
   domaine                    String?
   platformName               String           @default("RendezVousApp")
   slogan                     String?
@@ -31,6 +32,8 @@ model SystemConfig {
   delaiMinAnnulationHeures   Int              @default(0)
   delaiMinModificationHeures Int              @default(48)
   maxChangementsRdv          Int              @default(1)
+  /// Nombre total de personnes de l'équipe (Professionnels + Réceptionnistes). NULL = pas de limite.
+  tailleEquipe               Int?
   createdAt                  DateTime         @default(now())
   updatedAt                  DateTime         @updatedAt
 }

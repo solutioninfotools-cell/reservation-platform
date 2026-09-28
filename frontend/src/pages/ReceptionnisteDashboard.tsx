@@ -333,12 +333,57 @@ export default function ReceptionnisteDashboard() {
       }
     };
 
+    /* ---------- Notifications réelles (backend /notifications) ---------- */
+    let LOCAL_NOTIFS = [];
+    const NOTIF_TYPE_UI = {
+      NOUVELLE_RESERVATION: "new", ANNULATION: "cancel", MODIFICATION: "edit",
+      CHANGEMENT_STATUT: "edit", PROFESSIONNEL_ABSENT: "absent", RAPPEL: "soon",
+      CONFLIT_PLANNING: "conflict", AFFECTATION: "new", AUTORISATIONS_MODIFIEES: "edit",
+      COMPTE_VALIDE: "new", COMPTE_REFUSE: "cancel", ANNONCE: "new"
+    };
+    function escHtml(v) {
+      return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    function relTime(value) {
+      if (!value) return "";
+      const min = Math.floor((Date.now() - new Date(value).getTime()) / 60000);
+      if (min < 1) return "À l'instant";
+      if (min < 60) return `Il y a ${min} min`;
+      const h = Math.floor(min / 60);
+      if (h < 24) return `Il y a ${h} h`;
+      const j = Math.floor(h / 24);
+      if (j === 1) return "Hier";
+      if (j < 31) return `Il y a ${j} j`;
+      return new Date(value).toLocaleDateString("fr-FR");
+    }
+    window.loadNotifs = async function loadNotifs() {
+      try {
+        const data = await apiGet("/notifications");
+        const rows = Array.isArray(data) ? data : [];
+        NOTIFS = [
+          ...LOCAL_NOTIFS,
+          ...rows.map((n) => ({
+            id: n.id,
+            type: NOTIF_TYPE_UI[n.type] || "new",
+            text: escHtml(n.message),
+            time: relTime(n.createdAt),
+            unread: !n.lu
+          }))
+        ];
+        updateNotifBadges();
+        if (state.page === "notifs") renderNotifsPage();
+      } catch (error) {
+        console.error("❌ Chargement notifications :", error);
+      }
+    };
+
     async function loadBackendData() {
       try {
         await loadProfessionnels();
         await loadAllCreneaux();
         await loadClients();
         await loadRdvList();
+        await loadNotifs();
       } catch (error) {
         console.error("❌ Chargement backend :", error);
         showToast(`❌ ${error.message || "Impossible de charger les données du backend"}`);
@@ -434,7 +479,7 @@ export default function ReceptionnisteDashboard() {
       else if (page === "clients") renderClientsPage();
       else if (page === "pros") renderProsPage();
       else if (page === "settings") renderSettingsPage();
-      else if (page === "notifs") renderNotifsPage();
+      else if (page === "notifs") { renderNotifsPage(); loadNotifs(); }
       updateNotifBadges();
     };
     window.updateNotifBadges = function () {
@@ -1336,12 +1381,37 @@ export default function ReceptionnisteDashboard() {
     /* =========================================================
        PAGE : PARAMÈTRES
        ========================================================= */
+    window._settingsProId = null;
+
     window.renderSettingsPage = function renderSettingsPage() {
       const page = document.getElementById("page-settings");
       if (!page) return;
+
+      // Seuls les professionnels qui ont accordé « Gérer les paramètres » sont proposés.
+      const editablePros = PROS.filter((p) => p.canEdit && p.accountActive);
+      if (!editablePros.some((p) => p.id === window._settingsProId)) {
+        window._settingsProId = editablePros[0]?.id || null;
+      }
+
+      const paramsCard = editablePros.length
+        ? `<section class="settings-card">
+            <h3>Paramètres de réservation</h3>
+            <div class="field-row">
+              <label>Professionnel</label>
+              <select id="spPro" onchange="loadProSettings(this.value)">
+                ${editablePros.map((p) => `<option value="${p.id}" ${p.id === window._settingsProId ? "selected" : ""}>${p.name}${p.role ? " — " + p.role : ""}</option>`).join("")}
+              </select>
+            </div>
+            <div id="spFields"><p style="margin:0;color:var(--ink-soft);font-size:13px;">Chargement…</p></div>
+          </section>`
+        : `<section class="settings-card">
+            <h3>Paramètres de réservation</h3>
+            <p style="margin:0;color:var(--ink-soft);font-size:13px;line-height:1.6;">Aucun professionnel ne vous a encore donné l'autorisation de gérer ses paramètres. Cette autorisation se configure depuis l'espace du professionnel.</p>
+          </section>`;
+
       page.innerHTML = `
         <div class="page-head">
-          <div><h1 class="page-title">Paramètres</h1><p class="page-sub">Préférences de votre espace réceptionniste</p></div>
+          <div><h1 class="page-title">Paramètres</h1><p class="page-sub">Votre espace et les paramètres des professionnels que vous gérez</p></div>
         </div>
         <div class="settings-grid">
           <section class="settings-card">
@@ -1349,18 +1419,64 @@ export default function ReceptionnisteDashboard() {
             <div class="field-row"><label>Rôle</label><input type="text" value="Réceptionniste" disabled /></div>
             <div class="field-row"><label>Session</label><input type="text" value="Connectée" disabled /></div>
           </section>
-          <section class="settings-card">
-            <h3>Interface</h3>
-            <p style="margin:0;color:var(--ink-soft);font-size:13px;line-height:1.6;">Les paramètres enregistrés côté serveur seront branchés ici lorsque leurs routes backend seront disponibles.</p>
-          </section>
+          ${paramsCard}
         </div>`;
+
+      if (window._settingsProId) loadProSettings(window._settingsProId);
+    };
+
+    window.loadProSettings = async function loadProSettings(proId) {
+      window._settingsProId = proId;
+      const box = document.getElementById("spFields");
+      if (!box) return;
+      box.innerHTML = `<p style="margin:0;color:var(--ink-soft);font-size:13px;">Chargement…</p>`;
+      try {
+        const p = await apiGet(`/receptionniste/professionnels/${encodeURIComponent(proId)}/parametres`);
+        // Si l'utilisateur a changé de professionnel pendant le chargement, on ignore cette réponse.
+        if (window._settingsProId !== proId) return;
+        box.innerHTML = `
+          <div class="field-row"><label>Intervalle minimum entre deux rendez-vous (minutes)</label><input type="number" id="spMinGap" min="0" max="240" value="${p.intervalleMinutes ?? 10}" /></div>
+          <div class="field-row"><label>Délai minimum avant réservation (heures)</label><input type="number" id="spMinLead" min="0" max="720" value="${p.delaiMinHeures ?? 2}" /></div>
+          <div class="field-row"><label>Réservation possible jusqu'à (jours à l'avance)</label><input type="number" id="spMaxLead" min="1" max="730" value="${p.delaiMaxJours ?? 90}" /></div>
+          <div class="field-row"><label>Rendez-vous maximum par client et par jour</label><input type="number" id="spMaxPerDay" min="1" max="20" value="${p.maxRdvParClientParJour ?? 1}" /></div>
+          <div class="field-row"><label>Seuil d'absences répétées avant signalement</label><input type="number" id="spAbsence" min="1" max="50" value="${p.seuilAbsences ?? 2}" /></div>
+          <button type="button" class="btn btn-primary" onclick="saveProSettings()">${iconCheck()} Enregistrer</button>`;
+      } catch (error) {
+        console.error("❌ Chargement paramètres :", error);
+        box.innerHTML = `<p style="margin:0;color:#c0392b;font-size:13px;">${error.message || "Impossible de charger les paramètres"}</p>`;
+      }
+    };
+
+    window.saveProSettings = async function saveProSettings() {
+      const proId = window._settingsProId;
+      if (!proId) return;
+      const num = (id) => parseInt(document.getElementById(id)?.value, 10);
+      const body = {
+        intervalleMinutes: num("spMinGap"),
+        delaiMinHeures: num("spMinLead"),
+        delaiMaxJours: num("spMaxLead"),
+        maxRdvParClientParJour: num("spMaxPerDay"),
+        seuilAbsences: num("spAbsence")
+      };
+      if (Object.values(body).some((v) => !Number.isFinite(v))) {
+        showToast("❌ Renseignez toutes les valeurs (nombres entiers)");
+        return;
+      }
+      try {
+        await apiPatch(`/receptionniste/professionnels/${encodeURIComponent(proId)}/parametres`, body);
+        showToast("✅ Paramètres enregistrés");
+        await loadProSettings(proId);
+      } catch (error) {
+        console.error("❌ Enregistrement paramètres :", error);
+        showToast(`❌ ${error.message || "Impossible d'enregistrer les paramètres"}`);
+      }
     };
 
     /* =========================================================
        PAGE : NOTIFICATIONS
        ========================================================= */
     window.notifRowHtml = function notifRowHtml(n) {
-      const ic = NOTIF_ICONS[n.type];
+      const ic = NOTIF_ICONS[n.type] || NOTIF_ICONS.new;
       return `<div class="notif-row ${n.unread?'unread':''}">
         <div class="notif-icon" style="background:${ic.bg};color:${ic.color}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ic.svg}</svg></div>
         <div class="notif-text"><span>${n.text}</span><div class="notif-time">${n.time}</div></div>
@@ -1373,13 +1489,26 @@ export default function ReceptionnisteDashboard() {
           <div><h1 class="page-title">Notifications</h1><p class="page-sub">Alertes et nouvelles demandes</p></div>
           <button class="btn btn-ghost btn-sm" onclick="markAllRead()">Tout marquer comme lu</button>
         </div>
-        <div class="card">${NOTIFS.map((n) => notifRowHtml(n)).join("")}</div>
+        <div class="card">${NOTIFS.length ? NOTIFS.map((n) => notifRowHtml(n)).join("") : `<div style="padding:28px;text-align:center;color:var(--ink-soft);font-size:13px;">Aucune notification pour le moment</div>`}</div>
       `;
       document.getElementById("page-notifs").innerHTML = html;
     };
-    window.markAllRead = function markAllRead() { NOTIFS.forEach((n) => n.unread = false); renderNotifsPage(); updateNotifBadges(); };
+    window.markAllRead = async function markAllRead() {
+      try {
+        await apiPatch("/notifications/read-all");
+        LOCAL_NOTIFS.forEach((n) => n.unread = false);
+        NOTIFS.forEach((n) => n.unread = false);
+        renderNotifsPage();
+        updateNotifBadges();
+      } catch (error) {
+        console.error("❌ Notifications :", error);
+        showToast(`❌ ${error.message || "Impossible de marquer les notifications comme lues"}`);
+      }
+    };
     window.addNotif = function addNotif(type, text) {
-      NOTIFS.unshift({ id: Date.now(), type, text, time: "À l'instant", unread: true });
+      const local = { id: "local-" + Date.now(), type, text, time: "À l'instant", unread: true };
+      LOCAL_NOTIFS.unshift(local);
+      NOTIFS.unshift(local);
       updateNotifBadges();
     };
 
@@ -2323,9 +2452,11 @@ export default function ReceptionnisteDashboard() {
     };
 
     loadBackendData();
+    const notifTimer = setInterval(() => { if (!document.hidden) loadNotifs(); }, 30000);
 
     return () => {
       ac.abort();
+      clearInterval(notifTimer);
       const fns = ["localDateISO","todayISO","isoPlusDays","proById","fmtDateLong","fmtDateShort","calcAge","absentCount","showToast","goToPage","renderPage","updateNotifBadges","nowHM","renderAgenda","agendaDateLabel","capitalize","weekStart","agendaShift","agendaToday","setAgendaView","setProFilter","visiblePros","renderAgendaMain","dayViewHtml","placeDayAppts","handleDayColClick","weekViewHtml","monthViewHtml","jumpToDay","renderRdvPage","updateRdvFilter","renderRdvTable","initials","uniqueClients","renderClientsPage","updateClientFilter","renderClientsTable","renderProsPage","openEditCreneaux","addCreneauRow","saveCreneaux","renderSettingsPage","loadServicesForProfessional","openProfessionalProfile","setAgendaViewFor","notifRowHtml","renderNotifsPage","markAllRead","addNotif","closeModal","openModal","openNewRdv","refreshNewRdvServicesList","refreshNewRdvSlots","pickNewRdvService","pickNewRdvSlot","detectClient","submitNewRdv","openRdvDetail","changeStatus","cancelRdv","openEditRdv","saveEditRdv","slideToEditAppointment","slideToEditClient","openEditAppointment","loadEditRdvServices","pickEditRdvService","renderEditRdvSlots","pickEditRdvSlot","saveEditAppointment","openClientFiche","toggleExportMenu","closeExportMenus","getProfessionalColor","hexToRgb","lightenRgb","getFilteredAppointmentsForExport","exportMock","exportExcel","exportPDF","svg","iconPlus","iconCal","iconCheck","iconCheckCircle","iconClock","iconX","iconUserX","iconChevronLeft","iconChevronRight","iconPrinter","iconEdit","iconEye","iconAlert","iconPhone","iconGrid","iconList","iconGripHandle","statusIconSvg","getClientNotes","saveClientNote","setProView","renderProRow","agendaLegendHtml","toggleDatePicker","closeDatePicker","shiftDatePickerMonth","setDatePickerMonth","setDatePickerYear","pickDate","renderDatePicker","placeWeekAppts","handleWeekColClick"];
       fns.forEach((k) => { try { delete (window as any)[k]; } catch {} });
     };

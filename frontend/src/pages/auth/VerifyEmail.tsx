@@ -9,7 +9,7 @@ export default function VerifyEmail() {
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState((location.state as any)?.email || '');
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState((location.state as any)?.code || '');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -33,7 +33,12 @@ export default function VerifyEmail() {
     <div className="min-h-screen bg-paper flex items-center justify-center px-6">
       <div className="w-full max-w-sm bg-white border border-line rounded-xl2 shadow-xl p-8">
         <h1 className="text-xl font-extrabold mb-1">Vérifiez votre e-mail</h1>
-        <p className="text-sm text-ink-soft mb-6">Saisissez le code à 6 chiffres envoyé à votre adresse e-mail.</p>
+        <p className="text-sm text-ink-soft mb-2">Saisissez le code à 6 chiffres envoyé à votre adresse e-mail.</p>
+        {code && !success && (
+          <p className="text-xs text-ink-soft mb-4 bg-primary-tint rounded-lg py-2 px-3">
+            Mode démo (aucun fournisseur d'e-mail branché) — le code a été pré-rempli automatiquement.
+          </p>
+        )}
 
         {success ? (
           <div className="text-status-termine text-sm font-bold text-center py-4">E-mail vérifié ✓ Redirection vers la connexion…</div>

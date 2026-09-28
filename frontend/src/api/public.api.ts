@@ -13,6 +13,11 @@ export const publicApi = {
 };
 
 export const assistantApi = {
-  ask: (question: string, professionnelId?: string, mode: 'public' | 'pro' = 'public') =>
-    api.post('/assistant/ask', { question, professionnelId, mode }).then((r) => r.data),
+  // Le backend (ValidationPipe forbidNonWhitelisted) n'accepte que { question } :
+  // tout autre champ (mode, professionnelId) provoque un 400.
+  ask: (question: string) =>
+    api.post('/assistant/ask', { question }).then((r) => r.data),
+  // Assistant de l'espace Professionnel : le professionnel est déduit du JWT.
+  askPro: (question: string) =>
+    api.post('/assistant/pro', { question }).then((r) => r.data),
 };

@@ -16,6 +16,8 @@ import { ClientsService } from '../clients/clients.service';
 import { AppointmentsService } from '../appointments/appointments.service';
 import { CreateRdvDto } from '../appointments/dto/create-rdv.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditService } from '../audit/audit.service';
+import { UpdateParametresDto } from '../professionnel/dto/parametres.dto';
 
 
 @Injectable()
@@ -26,6 +28,7 @@ export class ReceptionnisteService {
     private clientsService: ClientsService,
     private appointments: AppointmentsService,
     private notificationsService: NotificationsService,
+    private audit: AuditService,
   ) {}
 
 
@@ -1514,4 +1517,65 @@ async getCreneaux(
 
   });
 }
+  // =========================================================
+  // PARAMETRES DE RESERVATION DU PROFESSIONNEL
+  // (accessibles uniquement si le professionnel a accordé
+  //  la permission « peutGererParametres » sur son espace)
+  // =========================================================
+
+  private async ensureParametresAccess(
+    userId: string,
+    professionnelId: string
+  ) {
+    const affectation =
+      await this.ensureAffectee(userId, professionnelId);
+
+    if (!affectation.actif) {
+      throw new ForbiddenException(
+        'Votre accès à cet espace a été suspendu par le professionnel.'
+      );
+    }
+
+    if (!affectation.peutGererParametres) {
+      throw new ForbiddenException(
+        "Vous n'avez pas l'autorisation de gérer les paramètres de ce professionnel."
+      );
+    }
+
+    return affectation;
+  }
+
+  async getParametres(
+    userId: string,
+    professionnelId: string
+  ) {
+    await this.ensureParametresAccess(userId, professionnelId);
+
+    return this.appointments.getParametres(professionnelId);
+  }
+
+  async updateParametres(
+    userId: string,
+    professionnelId: string,
+    dto: UpdateParametresDto
+  ) {
+    await this.ensureParametresAccess(userId, professionnelId);
+
+    const updated =
+      await this.prisma.parametresReservation.upsert({
+        where: { professionnelId },
+        create: { professionnelId, ...dto },
+        update: dto,
+      });
+
+    await this.audit.log({
+      userId,
+      professionnelId,
+      action: 'PARAMETRES_UPDATED',
+      cible: updated.id,
+      details: { ...dto, parReceptionniste: true },
+    });
+
+    return updated;
+  }
 }

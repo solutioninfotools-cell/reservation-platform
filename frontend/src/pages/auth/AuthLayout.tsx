@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authApi } from '../../api/auth.api';
+import { configApi } from '../../api/config.api';
 import { useAuthStore } from '../../stores/auth.store';
 import { Button } from '../../components/ui/Button';
 import { Input, Field } from '../../components/ui/Input';
@@ -68,18 +69,30 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
   const [registerError, setRegisterError] = useState('');
   const [registerLoading, setRegisterLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [codeVerificationDev, setCodeVerificationDev] = useState('');
+  // Équipe complète : l'Admin a fixé un nombre de personnes et il est atteint.
+  const [equipeComplete, setEquipeComplete] = useState(false);
+
+  useEffect(() => {
+    configApi
+      .getPublicConfig()
+      .then((cfg) => setEquipeComplete(!!cfg?.equipeComplete))
+      .catch(() => {});
+  }, []);
 
   async function submitRegister(e: React.FormEvent) {
     e.preventDefault();
     setRegisterError('');
     if (!role) { setRegisterError('Merci de choisir un rôle.'); return; }
     if (!nom || !registerEmail || !registerPassword) { setRegisterError('Merci de renseigner les champs obligatoires.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(registerEmail)) { setRegisterError("Le format de l'adresse e-mail est invalide."); return; }
+    if (telephone && !/^[0-9]{10}$/.test(telephone)) { setRegisterError('Le numéro de téléphone doit contenir exactement 10 chiffres.'); return; }
     if (registerPassword.length < 8) { setRegisterError('Le mot de passe doit contenir au moins 8 caractères.'); return; }
     if (registerPassword !== confirmPassword) { setRegisterError('Les mots de passe ne correspondent pas.'); return; }
 
     setRegisterLoading(true);
     try {
-      await authApi.register({
+      const res = await authApi.register({
         email: registerEmail,
         password: registerPassword,
         role,
@@ -87,6 +100,7 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
         specialite: role === 'PROFESSIONNEL' ? (specialite || undefined) : undefined,
         telephone: telephone || undefined,
       });
+      setCodeVerificationDev(res?.codeVerificationDev || '');
       setDone(true);
     } catch (err: any) {
       setRegisterError(err?.response?.data?.error || "Une erreur est survenue lors de l'inscription.");
@@ -176,6 +190,11 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
                 className="w-full border border-line rounded-lg px-3 py-2.5 text-sm bg-paper focus:outline-none focus:border-primary-light focus:ring-4 focus:ring-primary-tint transition"
               />
               {loginError && <div className="text-status-annule text-xs font-semibold">{loginError}</div>}
+              <div className="text-right -mt-1">
+                <Link to="/mot-de-passe-oublie" className="text-xs font-semibold text-primary hover:underline">
+                  Mot de passe oublié ?
+                </Link>
+              </div>
               <button
                 disabled={loginLoading}
                 type="submit"
@@ -207,7 +226,16 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
               <div className="font-extrabold text-lg">RendezVousApp</div>
             </div>
 
-            {done ? (
+            {equipeComplete && !done ? (
+              <div className="text-center py-6">
+                <div className="w-14 h-14 rounded-full bg-primary-tint text-primary flex items-center justify-center mx-auto mb-4 text-2xl">!</div>
+                <h1 className="text-lg font-extrabold mb-2">Établissement complet</h1>
+                <p className="text-sm text-ink-soft">
+                  L'équipe de l'établissement est au complet : les nouvelles inscriptions sont fermées pour le moment.
+                  Contactez l'administrateur si vous devez rejoindre l'équipe.
+                </p>
+              </div>
+            ) : done ? (
               <div className="text-center py-6">
                 <div className="w-14 h-14 rounded-full bg-primary-tint text-primary flex items-center justify-center mx-auto mb-4 text-2xl">✓</div>
                 <h1 className="text-lg font-extrabold mb-2">Compte créé</h1>
@@ -216,7 +244,13 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
                   Votre compte doit ensuite être <b>validé par l'administrateur</b> avant de
                   pouvoir vous connecter — vous recevrez une notification dès que ce sera fait.
                 </p>
-                <Link to="/verification-email" state={{ email: registerEmail }}>
+                {codeVerificationDev && (
+                  <p className="text-xs text-ink-soft mb-4 bg-primary-tint rounded-lg py-2 px-3">
+                    Mode démo (aucun fournisseur d'e-mail branché) — votre code de vérification :{' '}
+                    <b className="text-primary">{codeVerificationDev}</b>
+                  </p>
+                )}
+                <Link to="/verification-email" state={{ email: registerEmail, code: codeVerificationDev }}>
                   <Button className="w-full justify-center">Vérifier mon e-mail</Button>
                 </Link>
               </div>
@@ -256,7 +290,13 @@ export default function AuthLayout({ initialMode }: { initialMode: Mode }) {
                       </Field>
                     )}
                     <Field label="Téléphone">
-                      <Input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="Numéro de téléphone" />
+                      <Input
+                        value={telephone}
+                        onChange={(e) => setTelephone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                        placeholder="10 chiffres"
+                        inputMode="numeric"
+                        maxLength={10}
+                      />
                     </Field>
                     <Field label="Adresse e-mail *">
                       <Input type="email" value={registerEmail} onChange={(e) => setRegisterEmail(e.target.value)} placeholder="vous@exemple.com" />

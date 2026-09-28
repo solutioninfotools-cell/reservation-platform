@@ -9,6 +9,13 @@ export const professionnelApi = {
   moi: () => api.get('/professionnel/moi').then((r) => r.data),
   updateProfil: (data: any) => api.patch('/professionnel/profil', data).then((r) => r.data),
 
+  /** Téléverse une image (JPG/PNG/WebP) ; le serveur renvoie { url }. type : 'profil' | 'service'. */
+  uploadImage: (file: File, type: 'profil' | 'service') => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post(`/professionnel/upload-image?type=${type}`, fd).then((r) => r.data as { url: string });
+  },
+
   listServices: () => api.get('/professionnel/services').then((r) => r.data),
   createService: (data: any) => api.post('/professionnel/services', data).then((r) => r.data),
   updateService: (id: string, data: any) => api.patch(`/professionnel/services/${id}`, data).then((r) => r.data),

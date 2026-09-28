@@ -342,20 +342,32 @@ export class AssistantService {
     if (q.includes('horaire') || q.includes('ouvert')) {
       return { answer: `Nos horaires : ${config?.horairesGeneraux || 'non renseignés'} (${(config?.joursOuvrables || []).join(', ') || 'jours non renseignés'}).` };
     }
+    if (q.includes('professionnel') || q.includes('équipe') || q.includes('equipe') || q.includes('praticien') || q.includes('qui sont')) {
+      const pros = await this.prisma.professionnel.findMany({
+        where: { user: { statutCompte: 'ACTIF' } },
+        select: { nom: true, specialite: true, description: true },
+      });
+      if (!pros.length) return { answer: "Aucun professionnel n'est présenté pour le moment." };
+      return {
+        answer: pros
+          .map((p) => `- **${p.nom}**${p.specialite ? ` — ${p.specialite}` : ''}${p.description ? ` : ${p.description}` : ''}`)
+          .join('\n'),
+      };
+    }
     if (q.includes('service') || q.includes('propos')) {
       const services = professionnelId
         ? await this.prisma.service.findMany({ where: { professionnelId, actif: true }, select: { nom: true } })
         : [];
       return { answer: services.length ? `Nos services : ${services.map((s) => s.nom).join(', ')}.` : "Consultez la page des services pour la liste complète." };
     }
+    if (q.includes('annul') || q.includes('modifi')) {
+      return { answer: "Pour annuler ou modifier votre rendez-vous, cliquez sur « Gérer mon rendez-vous » puis saisissez le code de gestion reçu à la confirmation, dans les délais autorisés." };
+    }
     if (q.includes('rendez-vous') || q.includes('réserv') || q.includes('reserv')) {
       return { answer: 'Pour prendre rendez-vous, choisissez un service, puis une date et un créneau disponible, et renseignez vos coordonnées. Vous recevrez une confirmation immédiate.' };
     }
     if (q.includes('où') || q.includes('adresse') || q.includes('situ')) {
       return { answer: config?.address ? `Nous sommes situés au : ${config.address}.` : "L'adresse n'est pas encore renseignée." };
-    }
-    if (q.includes('annul')) {
-      return { answer: "Vous pouvez annuler votre rendez-vous via le lien reçu lors de la confirmation, dans les délais autorisés." };
     }
     return { answer: "Je peux répondre à des questions sur les horaires, les services, la prise de rendez-vous ou notre adresse. Pouvez-vous reformuler ?" };
   }
@@ -541,5 +553,3 @@ export class AssistantService {
     };
   }
 }
-
-

@@ -4,6 +4,7 @@ import { ClientsService } from '../clients/clients.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../websocket/events.gateway';
+import { fusionnerPlages } from '../common/plages';
 import { CreateRdvDto } from './dto/create-rdv.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { RescheduleDto } from './dto/reschedule.dto';
@@ -60,7 +61,12 @@ export class AppointmentsService {
     const duree = service.dureeMinutes;
     const creneaux: string[] = [];
 
-    for (const dispo of dispos) {
+    // Plages fusionnées : des disponibilités en double ou qui se recoupent ne doivent
+    // pas produire deux fois le même créneau.
+    const plages = fusionnerPlages(dispos);
+    const dejaVus = new Set<string>();
+
+    for (const dispo of plages) {
       const [hDeb, mDeb] = dispo.heureDebut.split(':').map(Number);
       const [hFin, mFin] = dispo.heureFin.split(':').map(Number);
       let cursor = new Date(date); cursor.setHours(hDeb, mDeb, 0, 0);
@@ -74,8 +80,10 @@ export class AppointmentsService {
         const chevaucheRdv = rdvsExistants.some((r) => slotStart < r.dateFin && slotEnd > r.dateDebut);
         const estPasse = slotStart.getTime() < Date.now();
 
-        if (!dansIndispo && !chevaucheRdv && !estPasse) {
-          creneaux.push(slotStart.toISOString());
+        const cle = slotStart.toISOString();
+        if (!dansIndispo && !chevaucheRdv && !estPasse && !dejaVus.has(cle)) {
+          dejaVus.add(cle);
+          creneaux.push(cle);
         }
         cursor = new Date(cursor.getTime() + duree * 60000);
       }

@@ -46,7 +46,15 @@ export default function InitialSetup() {
 
   return (
     <div className="min-h-screen bg-paper flex items-center justify-center px-6 py-12">
-      <div className="w-full max-w-4xl bg-white border border-line rounded-xl2 shadow-xl overflow-hidden grid grid-cols-1 md:grid-cols-[280px_1fr]">
+      <div className="w-full max-w-4xl">
+        <button
+          type="button"
+          onClick={() => navigate('/admin')}
+          className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-primary-dark hover:text-primary transition"
+        >
+          <span aria-hidden="true">←</span> Retour à l'espace Admin
+        </button>
+        <div className="bg-white border border-line rounded-xl2 shadow-xl overflow-hidden grid grid-cols-1 md:grid-cols-[280px_1fr]">
 
         {/* ---------- PANNEAU LATÉRAL (desktop) ---------- */}
         <div className="hidden md:flex flex-col bg-gradient-to-br from-primary via-primary-light to-primary-dark text-white p-8">
@@ -214,6 +222,7 @@ export default function InitialSetup() {
               </div>
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>

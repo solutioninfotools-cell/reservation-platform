@@ -11,6 +11,8 @@ import { UpdatePermissionsDto } from './dto/affectation.dto';
 import { CreateChampDto, TYPES_AVEC_OPTIONS, UpdateChampDto } from './dto/champ.dto';
 import { NoteClientDto, UpdateClientDto } from './dto/client.dto';
 import { UpdateParametresDto } from './dto/parametres.dto';
+import { getSupervision } from '../common/supervision';
+import { fusionnerPlages } from '../common/plages';
 import { CreateRdvDto } from '../appointments/dto/create-rdv.dto';
 
 /** Champs du profil dont le CDC II.4 exige la saisie avant certaines fonctionnalités. */
@@ -50,8 +52,17 @@ export class ProfessionnelService {
 
     // Le bouton « Espace Administrateur » du CDC II.2 n'est proposé qu'au
     // superviseur en mode Prestataire.
-    const config = await this.prisma.systemConfig.findFirst();
-    return { ...pro, profil: this.completude(pro), modeSupervision: config?.modeSupervision ?? null };
+    // `modeSupervision` est exposé tel qu'il s'applique à CE professionnel : « PRESTATAIRE »
+    // seulement s'il est le superviseur désigné (c'est ce qui affiche le bouton de
+    // basculation vers l'espace Admin). Les autres professionnels reçoivent « ADMIN ».
+    const { mode, superviseurUserId } = await getSupervision(this.prisma);
+    const estSuperviseur = mode === 'PRESTATAIRE' && superviseurUserId === userId;
+    return {
+      ...pro,
+      profil: this.completude(pro),
+      estSuperviseur,
+      modeSupervision: mode === 'PRESTATAIRE' && !estSuperviseur ? 'ADMIN' : mode,
+    };
   }
 
   async updateProfil(userId: string, data: Partial<{ nom: string; specialite: string; description: string; adresse: string; telephone: string; photoUrl: string }>) {
@@ -223,6 +234,11 @@ export class ProfessionnelService {
     if (dto.heureFin <= dto.heureDebut) {
       throw new BadRequestException("L'heure de fin doit être postérieure à l'heure de début.");
     }
+    // Même plage déjà enregistrée : on la renvoie au lieu de créer un doublon.
+    const existante = await this.prisma.disponibilite.findFirst({
+      where: { professionnelId: pro.id, jourSemaine: dto.jourSemaine, heureDebut: dto.heureDebut, heureFin: dto.heureFin },
+    });
+    if (existante) return existante;
     const dispo = await this.prisma.disponibilite.create({ data: { ...dto, professionnelId: pro.id } });
     await this.audit.log({ userId, professionnelId: pro.id, action: 'CRENEAU_CREATED', cible: dispo.id, details: dto });
     return dispo;
@@ -769,11 +785,14 @@ export class ProfessionnelService {
     if (!dispos.length) return 0;
 
     const minutesParJour = new Map<number, number>();
-    for (const d of dispos) {
-      const [hd, md] = d.heureDebut.split(':').map(Number);
-      const [hf, mf] = d.heureFin.split(':').map(Number);
-      const duree = Math.max(0, hf * 60 + mf - (hd * 60 + md));
-      minutesParJour.set(d.jourSemaine, (minutesParJour.get(d.jourSemaine) ?? 0) + duree);
+    for (let jour = 0; jour < 7; jour++) {
+      // Plages fusionnées : un doublon ne doit pas gonfler le temps d'ouverture.
+      for (const d of fusionnerPlages(dispos.filter((x) => x.jourSemaine === jour))) {
+        const [hd, md] = d.heureDebut.split(':').map(Number);
+        const [hf, mf] = d.heureFin.split(':').map(Number);
+        const duree = Math.max(0, hf * 60 + mf - (hd * 60 + md));
+        minutesParJour.set(jour, (minutesParJour.get(jour) ?? 0) + duree);
+      }
     }
 
     let minutesOuvertes = 0;

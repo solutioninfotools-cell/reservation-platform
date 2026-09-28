@@ -3,6 +3,7 @@ import InitialSetup from '../pages/setup/InitialSetup';
 import Login from '../pages/auth/Login';
 import Register from '../pages/auth/Register';
 import VerifyEmail from '../pages/auth/VerifyEmail';
+import ForgotPassword from '../pages/auth/ForgotPassword';
 import CrenoPagePublique from '../pages/CrenoPagePublique';
 import ClientManageRdv from '../pages/client/ClientManageRdv';
 import AdminDashboard from '../pages/AdminDashboard';
@@ -15,6 +16,8 @@ import Error500 from '../pages/errors/Error500';
 import ErrorNetwork from '../pages/errors/ErrorNetwork';
 import { RequireAuth } from '../guards/RequireAuth';
 import { RequireRole } from '../guards/RequireRole';
+import { RequireAdminSpace } from '../guards/RequireAdminSpace';
+import SupervisionReset from '../pages/admin/SupervisionReset';
 
 export const router = createBrowserRouter([
   { path: '/', element: <CrenoPagePublique /> },
@@ -23,11 +26,18 @@ export const router = createBrowserRouter([
   { path: '/connexion', element: <Login /> },
   { path: '/inscription', element: <Register /> },
   { path: '/verification-email', element: <VerifyEmail /> },
+  { path: '/mot-de-passe-oublie', element: <ForgotPassword /> },
 
   {
     element: <RequireAuth />,
     children: [
-      { element: <RequireRole role="ADMIN" />, children: [{ path: '/admin', element: <AdminDashboard /> }] },
+      {
+        element: <RequireAdminSpace />,
+        children: [
+          { path: '/admin', element: <AdminDashboard /> },
+          { path: '/admin/supervision', element: <SupervisionReset /> },
+        ],
+      },
       { element: <RequireRole role="PROFESSIONNEL" />, children: [{ path: '/professionnel/:page?', element: <ProfessionnelDashboard /> }] },
       { element: <RequireRole role="RECEPTIONNISTE" />, children: [{ path: '/receptionniste', element: <ReceptionnisteDashboard /> }] },
     ],

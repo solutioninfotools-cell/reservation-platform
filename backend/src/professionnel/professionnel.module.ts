@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ProfessionnelService } from './professionnel.service';
 import { ProfessionnelController } from './professionnel.controller';
+import { UploadService } from '../upload/upload.service';
 import { AppointmentsModule } from '../appointments/appointments.module';
 
 @Module({
@@ -9,7 +10,7 @@ import { AppointmentsModule } from '../appointments/appointments.module';
   // que d'en dupliquer la logique.
   imports: [AppointmentsModule],
   controllers: [ProfessionnelController],
-  providers: [ProfessionnelService],
+  providers: [ProfessionnelService, UploadService],
   exports: [ProfessionnelService],
 })
 export class ProfessionnelModule {}

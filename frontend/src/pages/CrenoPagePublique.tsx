@@ -131,6 +131,56 @@ function fmtTime(iso: string) { return new Date(iso).toLocaleTimeString('fr-FR',
 function isValidNomPrenom(v: string) {
   return /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,50}$/.test((v || '').trim());
 }
+/** Questions proposées d'un clic dans l'Assistant IA de la page publique. */
+const QUESTIONS_ASSISTANT = [
+  'Quels sont vos services et leurs prix ?',
+  "Quels sont vos horaires d'ouverture ?",
+  'Qui sont les professionnels ?',
+  'Comment prendre rendez-vous ?',
+  'Comment annuler ou modifier mon rendez-vous ?',
+  'Où êtes-vous situés ?',
+];
+
+/**
+ * Google Maps refuse d'être affiché dans une <iframe> avec un lien classique
+ * (google.com/maps/place/…, maps.app.goo.gl/…) : la page reste vide/grise.
+ * Seules les URL « embed » sont autorisées. Cette fonction transforme donc
+ * ce que l'admin a collé en URL intégrable.
+ */
+function toMapEmbedUrl(raw: string, fallbackAddress?: string | null): string | null {
+  let v = (raw || '').trim();
+  if (!v) return null;
+
+  // 1) L'admin a collé le code <iframe ...> complet de « Intégrer une carte »
+  const iframeSrc = v.match(/src=["']([^"']+)["']/i);
+  if (iframeSrc) v = iframeSrc[1].replace(/&amp;/g, '&');
+
+  // 2) Déjà une URL intégrable
+  if (/google\.[a-z.]+\/maps\/embed/i.test(v) || /[?&]output=embed/i.test(v)) return v;
+
+  // 3) Lien avec coordonnées : .../@36.19,5.41,17z  ou  ...!3d36.19!4d5.41  ou  ?q=36.19,5.41
+  const coords =
+    v.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) ||
+    v.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/) ||
+    v.match(/[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  if (coords) return `https://maps.google.com/maps?q=${coords[1]},${coords[2]}&z=16&output=embed`;
+
+  // 4) Lien /maps/place/Nom+du+lieu/...
+  const place = v.match(/\/maps\/place\/([^/@?]+)/i);
+  if (place) {
+    try {
+      return `https://maps.google.com/maps?q=${encodeURIComponent(decodeURIComponent(place[1].replace(/\+/g, ' ')))}&z=16&output=embed`;
+    } catch { /* on tombe sur la suite */ }
+  }
+
+  // 5) Lien court (maps.app.goo.gl, goo.gl/maps) : impossible à décoder côté navigateur
+  //    -> on retombe sur l'adresse saisie dans les paramètres
+  if (fallbackAddress && fallbackAddress.trim().length >= 5) {
+    return `https://maps.google.com/maps?q=${encodeURIComponent(fallbackAddress.trim())}&z=16&output=embed`;
+  }
+  return null;
+}
+
 function isValidAdresse(v: string) {
   return (v || '').trim().length >= 5;
 }
@@ -202,6 +252,8 @@ export default function CrenoPagePublique() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  const mapEmbedUrl = useMemo(() => toMapEmbedUrl(espace?.localisationUrl || '', espace?.address), [espace?.localisationUrl, espace?.address]);
 
   const serviceGroups: ServiceGroup[] = useMemo(() => {
     const groups = new Map<string, ServiceGroup>();
@@ -720,6 +772,10 @@ export default function CrenoPagePublique() {
   .assistant-msg-list { margin: 2px 0 8px 18px; padding: 0; }
   .assistant-msg-list:last-child { margin-bottom: 0; }
   .assistant-msg-list li { margin-bottom: 4px; }
+  .assistant-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 18px 12px; border-top: 1px solid var(--primary-soft); background: #fff; max-height: 120px; overflow-y: auto; }
+  .assistant-suggestions button { font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; padding: 6px 12px; border-radius: 999px; background: linear-gradient(135deg, var(--primary-soft) 0%, #F3EEFF 100%); border: 1px solid var(--primary-light); color: var(--primary-dark); text-align: left; }
+  .assistant-suggestions button:hover:not(:disabled) { border-color: var(--primary); background: var(--primary-soft); }
+  .assistant-suggestions button:disabled { opacity: .5; cursor: default; }
   .assistant-panel-input { display: flex; gap: 8px; padding: 14px 18px; border-top: 1px solid var(--primary-soft); background: #fff; }
   .assistant-panel-input input { flex: 1; border: 1px solid var(--primary-soft); border-radius: 999px; padding: 10px 16px; font-size: 13px; background: var(--paper); }
   .assistant-panel-input button { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; border: none; border-radius: 50%; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
@@ -1076,23 +1132,6 @@ export default function CrenoPagePublique() {
         </div>
       </section>
 
-      {espace.localisationUrl && (
-        <section className="location-section">
-          <div className="location-card">
-            <div className="location-card-info">
-              <div className="location-card-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-              </div>
-              <h3 className="location-card-title">Nous trouver</h3>
-              <p className="location-card-address">{espace.address || 'Retrouvez-nous à l\'adresse indiquée ci-dessus.'}</p>
-            </div>
-            <div className="location-card-map">
-              <iframe src={espace.localisationUrl} loading="lazy" referrerPolicy="no-referrer-when-downgrade" title="Localisation du cabinet" />
-            </div>
-          </div>
-        </section>
-      )}
-
       <div id="services-anchor" style={{ scrollMarginTop: '80px' }}></div>
       <section className="cr-section">
         <div className="cr-section-split">
@@ -1234,6 +1273,24 @@ export default function CrenoPagePublique() {
           </div>
         </div>
       </section>
+
+      {mapEmbedUrl && (
+        <section className="location-section">
+          <div className="location-card">
+            <div className="location-card-info">
+              <div className="location-card-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+              </div>
+              <h3 className="location-card-title">Nous trouver</h3>
+              <p className="location-card-address">{espace.address || 'Retrouvez-nous à l\'adresse indiquée ci-dessus.'}</p>
+              {/^https?:\/\//i.test(espace.localisationUrl || '') && (<a href={espace.localisationUrl!} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', fontWeight: 600, fontSize: 13.5 }}>Ouvrir dans Google Maps →</a>)}
+            </div>
+            <div className="location-card-map">
+              <iframe src={mapEmbedUrl} loading="lazy" allowFullScreen referrerPolicy="no-referrer-when-downgrade" title="Localisation du cabinet" />
+            </div>
+          </div>
+        </section>
+      )}
 
       <footer className="cr-footer">
         <span>© {new Date().getFullYear()} {espace.platformName} — Tous droits réservés.</span>
@@ -2030,7 +2087,7 @@ export default function CrenoPagePublique() {
         </div>
       )}
 
-      <AssistantWidget mode="public" />
+      <AssistantWidget mode="public" suggestions={QUESTIONS_ASSISTANT} />
     </>
   );
 }

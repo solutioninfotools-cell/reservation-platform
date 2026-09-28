@@ -1,11 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
+import { AdminAccessGuard } from '../common/guards/admin-access.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AdminService } from './admin.service';
+import { FichierRecu, UploadService } from '../upload/upload.service';
 import {
   AffectationDto,
   AnnonceDto,
@@ -36,11 +37,28 @@ import {
  */
 @ApiTags('admin')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
+@UseGuards(JwtAuthGuard, AdminAccessGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private admin: AdminService) {}
+  constructor(private admin: AdminService, private upload: UploadService) {}
+
+  /**
+   * Téléversement d'une image (photo de professionnel, logo ou image d'accueil
+   * de la plateforme) depuis l'espace Admin. JPG/PNG/WebP, 5 Mo max.
+   */
+  @Post('upload-image')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadImage(@UploadedFile() file: FichierRecu, @Query('type') type?: string) {
+    const dossier = type === 'profil' ? 'profils' : type === 'logo' || type === 'hero' ? 'plateforme' : 'services';
+    const url = await this.upload.saveImage(file, dossier);
+    return { url };
+  }
+
+  /** Vérifie (état relu en base) que l'appelant a bien accès à l'espace Admin. */
+  @Get('acces')
+  acces() {
+    return { ok: true };
+  }
 
   // ---------------- Professionnels ----------------
   @Get('professionnels')
@@ -327,5 +345,18 @@ export class AdminController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
+  }
+
+  @Get('export-pdf/:entity')
+  @ApiOperation({
+    summary:
+      'Export PDF (même contenu que l\'export CSV, mis en page en tableau) : professionnels | receptionnistes | ' +
+      'clients | rendez-vous | services | domaines | indisponibilites | audit.',
+  })
+  async exportPdf(@Param('entity') entity: string, @Query() query: Record<string, string>, @Res() res: Response) {
+    const { filename, buffer } = await this.admin.exportPdf(entity, query);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }
 }

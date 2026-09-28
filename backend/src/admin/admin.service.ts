@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { getSupervision } from '../common/supervision';
+import { getEquipe, messageEquipeComplete } from '../common/equipe';
 import { AppointmentsService } from '../appointments/appointments.service';
 import {
   AnnonceDto,
@@ -205,11 +207,31 @@ export class AdminService {
   // ==========================================================================
   // GESTION DES COMPTES (validation, activation, création, mot de passe)
   // ==========================================================================
+  /** Le professionnel superviseur ne peut être ni désactivé ni supprimé : la plateforme n'aurait plus d'accès Admin. */
+  private async refuserSiSuperviseur(userId: string, action: string) {
+    const { superviseurUserId } = await getSupervision(this.prisma);
+    if (superviseurUserId === userId) {
+      throw new BadRequestException(
+        `Impossible de ${action} le compte du professionnel superviseur. Passez d'abord la plateforme en mode Admin (Paramètres → Réinitialiser).`,
+      );
+    }
+  }
+
   async setStatutCompte(userId: string, statut: StatutCompteAdmin, adminUserId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Compte introuvable.');
     if (user.role === 'ADMIN' && userId === adminUserId) {
       throw new BadRequestException('Vous ne pouvez pas modifier le statut de votre propre compte administrateur.');
+    }
+
+    await this.refuserSiSuperviseur(userId, 'modifier le statut de');
+
+    // Réactiver un compte refusé / désactivé lui redonne une place dans l'équipe :
+    // on vérifie donc qu'il en reste une.
+    const occupePlace = (s: string) => s === 'ACTIF' || s === 'EN_ATTENTE';
+    if ((user.role === 'PROFESSIONNEL' || user.role === 'RECEPTIONNISTE') && occupePlace(statut) && !occupePlace(user.statutCompte)) {
+      const equipe = await getEquipe(this.prisma);
+      if (equipe.complete) throw new BadRequestException(messageEquipeComplete(equipe.taille!));
     }
 
     await this.prisma.user.update({ where: { id: userId }, data: { statutCompte: statut } });
@@ -304,6 +326,10 @@ export class AdminService {
    * contrairement à l'inscription publique qui reste EN_ATTENTE de validation.
    */
   async createCompte(dto: CreateCompteDto, adminUserId: string) {
+    if (dto.role === 'PROFESSIONNEL' || dto.role === 'RECEPTIONNISTE') {
+      const equipe = await getEquipe(this.prisma);
+      if (equipe.complete) throw new BadRequestException(messageEquipeComplete(equipe.taille!));
+    }
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Un compte existe déjà avec cette adresse e-mail.');
     if (dto.role === 'PROFESSIONNEL' && dto.domaineId) await this.assertDomaineExiste(dto.domaineId);
@@ -377,6 +403,7 @@ export class AdminService {
     if (!user) throw new NotFoundException('Compte introuvable.');
     if (userId === adminUserId) throw new BadRequestException('Vous ne pouvez pas supprimer votre propre compte.');
     if (user.role === 'ADMIN') throw new BadRequestException("Un compte administrateur ne peut pas être supprimé depuis l'interface.");
+    await this.refuserSiSuperviseur(userId, 'supprimer');
     if (user.professionnel && user.professionnel._count.rendezVous > 0) {
       throw new BadRequestException(
         "Ce professionnel possède des rendez-vous : son compte ne peut pas être supprimé. Désactivez-le pour conserver l'historique.",
@@ -558,7 +585,24 @@ export class AdminService {
   // ==========================================================================
   // DOMAINES D'ACTIVITÉ
   // ==========================================================================
+  /** Domaine choisi à la configuration initiale : toujours présent dans la liste des domaines. */
+  private async assurerDomainePrincipal(): Promise<string | null> {
+    const config = await this.prisma.systemConfig.findFirst();
+    const principal = config?.domaine?.trim();
+    if (!principal) return null;
+    const existant = await this.prisma.domaine.findUnique({ where: { nom: principal } });
+    if (!existant) {
+      try {
+        await this.prisma.domaine.create({ data: { nom: principal, actif: true, ordre: 0 } });
+      } catch {
+        // Création concurrente : le domaine existe déjà, rien à faire.
+      }
+    }
+    return principal;
+  }
+
   async listDomaines() {
+    const principal = await this.assurerDomainePrincipal();
     const domaines = await this.prisma.domaine.findMany({
       include: { _count: { select: { professionnels: true } } },
       orderBy: [{ ordre: 'asc' }, { nom: 'asc' }],
@@ -571,6 +615,7 @@ export class AdminService {
       ordre: d.ordre,
       createdAt: d.createdAt,
       nbProfessionnels: d._count.professionnels,
+      principal: d.nom === principal,
     }));
   }
 
@@ -589,6 +634,16 @@ export class AdminService {
   async updateDomaine(id: string, dto: UpdateDomaineDto, adminUserId: string) {
     const domaine = await this.prisma.domaine.findUnique({ where: { id } });
     if (!domaine) throw new NotFoundException('Domaine introuvable.');
+
+    const principal = await this.assurerDomainePrincipal();
+    if (domaine.nom === principal) {
+      if (dto.nom && dto.nom.trim() !== domaine.nom) {
+        throw new BadRequestException('Le domaine de la configuration initiale ne peut pas être renommé.');
+      }
+      if (dto.actif === false) {
+        throw new BadRequestException('Le domaine de la configuration initiale ne peut pas être masqué.');
+      }
+    }
 
     if (dto.nom && dto.nom.trim() !== domaine.nom) {
       const conflit = await this.prisma.domaine.findUnique({ where: { nom: dto.nom.trim() } });
@@ -610,6 +665,9 @@ export class AdminService {
       include: { _count: { select: { professionnels: true } } },
     });
     if (!domaine) throw new NotFoundException('Domaine introuvable.');
+    if (domaine.nom === (await this.assurerDomainePrincipal())) {
+      throw new BadRequestException('Le domaine de la configuration initiale ne peut pas être supprimé.');
+    }
     if (domaine._count.professionnels > 0) {
       throw new BadRequestException(
         `${domaine._count.professionnels} professionnel(s) sont rattachés à ce domaine : masquez-le au lieu de le supprimer.`,
@@ -666,6 +724,16 @@ export class AdminService {
     const message = dto.message.trim();
     await this.prisma.notification.createMany({
       data: destinataires.map((u) => ({ recipientId: u.id, senderId: adminUserId, type: 'ANNONCE' as const, message })),
+    });
+    // Trace visible dans la page Notifications de l'expéditeur (déjà marquée comme lue).
+    await this.prisma.notification.create({
+      data: {
+        recipientId: adminUserId,
+        senderId: adminUserId,
+        type: 'ANNONCE',
+        lu: true,
+        message: `Annonce envoyée à ${destinataires.length} compte(s) : « ${message.length > 120 ? message.slice(0, 117) + '…' : message} »`,
+      },
     });
     await this.audit.log({
       userId: adminUserId,
@@ -888,6 +956,7 @@ export class AdminService {
       description: s.description,
       dureeMinutes: s.dureeMinutes,
       prix: s.prix,
+      imageUrl: s.imageUrl,
       // `actif` = publié ou non ; `statut` = disponibilité affichée au client.
       actif: s.actif,
       statut: s.statut,
@@ -1104,15 +1173,25 @@ export class AdminService {
   async getParams() {
     const config = await this.prisma.systemConfig.findFirst();
     if (!config) throw new NotFoundException('Configuration système introuvable.');
-    return config;
+    const equipe = await getEquipe(this.prisma);
+    return { ...config, equipeActuelle: equipe.membres };
   }
 
   async updateParams(data: UpdateParamsDto, adminUserId: string) {
     const config = await this.prisma.systemConfig.findFirst();
     if (!config) throw new BadRequestException('Configuration système introuvable.');
+
+    // On ne peut pas réduire l'équipe en dessous du nombre de comptes déjà existants.
+    const equipe = await getEquipe(this.prisma);
+    if (typeof data.tailleEquipe === 'number' && data.tailleEquipe < equipe.membres) {
+      throw new BadRequestException(
+        `L'équipe compte déjà ${equipe.membres} personne(s) : la taille de l'équipe ne peut pas être inférieure. Supprimez ou refusez d'abord des comptes.`,
+      );
+    }
+
     const updated = await this.prisma.systemConfig.update({ where: { id: config.id }, data });
     await this.audit.log({ userId: adminUserId, action: 'PLATFORM_PARAMS_UPDATED', details: data as any });
-    return updated;
+    return { ...updated, equipeActuelle: equipe.membres };
   }
 
   // ==========================================================================
@@ -1473,5 +1552,83 @@ export class AdminService {
     const lines = rows.map((row) => columns.map(([key]) => escape(row[key])).join(';'));
     // BOM UTF-8 : Excel ouvre correctement les accents.
     return `﻿${[header, ...lines].join('\r\n')}\r\n`;
+  }
+
+  /**
+   * Export PDF : réutilise le CSV déjà généré (mêmes filtres, mêmes colonnes)
+   * et le remet en forme en tableau, plutôt que de dupliquer chaque requête.
+   */
+  async exportPdf(entity: string, filters: Record<string, string> = {}): Promise<{ filename: string; buffer: Buffer }> {
+    const { filename, csv } = await this.exportCsv(entity, filters);
+    const { header, rows } = this.parseCsv(csv);
+    const titre = filename.replace(/\.csv$/, '').replace(/[-_]/g, ' ');
+    const buffer = await this.toPdf(titre, header, rows);
+    return { filename: filename.replace(/\.csv$/, '.pdf'), buffer };
+  }
+
+  private parseCsv(csv: string): { header: string[]; rows: string[][] } {
+    const clean = csv.replace(/^\ufeff/, '');
+    const lines = clean.split('\r\n').filter((l) => l.length > 0);
+    const parseLine = (line: string) =>
+      line.split(';').map((cell) => {
+        const trimmed = cell.startsWith('"') && cell.endsWith('"') ? cell.slice(1, -1) : cell;
+        return trimmed.replace(/""/g, '"');
+      });
+    const [headerLine, ...rest] = lines;
+    return { header: headerLine ? parseLine(headerLine) : [], rows: rest.map(parseLine) };
+  }
+
+  /** Tableau PDF simple (en-tête violet, lignes alternées, pagination automatique). */
+  private toPdf(titre: string, header: string[], rows: string[][]): Promise<Buffer> {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const PDFDocument = require('pdfkit');
+    return new Promise((resolve, reject) => {
+      const paysage = header.length > 5;
+      const doc = new PDFDocument({ margin: 30, size: 'A4', layout: paysage ? 'landscape' : 'portrait' });
+      const chunks: Buffer[] = [];
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      doc.fontSize(16).fillColor('#5A3BC7').text(titre.charAt(0).toUpperCase() + titre.slice(1), { align: 'left' });
+      doc.moveDown(0.3);
+      doc.fontSize(9).fillColor('#6B6580').text(`Exporté le ${new Date().toLocaleString('fr-FR')} — ${rows.length} ligne(s)`);
+      doc.moveDown(0.8);
+
+      const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const colWidth = header.length ? pageWidth / header.length : pageWidth;
+      const rowHeight = 20;
+      let y = doc.y;
+
+      const drawHeader = () => {
+        doc.rect(doc.page.margins.left, y, pageWidth, rowHeight).fill('#7350E8');
+        doc.fontSize(8);
+        header.forEach((h, i) => {
+          doc.fillColor('#fff').text(h, doc.page.margins.left + i * colWidth + 4, y + 6, { width: colWidth - 8, ellipsis: true });
+        });
+        y += rowHeight;
+      };
+      drawHeader();
+
+      doc.fontSize(8);
+      rows.forEach((row, idx) => {
+        if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+          doc.addPage();
+          y = doc.page.margins.top;
+          drawHeader();
+          doc.fontSize(8);
+        }
+        if (idx % 2 === 0) doc.rect(doc.page.margins.left, y, pageWidth, rowHeight).fill('#F6F4FC');
+        row.forEach((cell, i) => {
+          doc.fillColor('#1B1730').text(cell || '—', doc.page.margins.left + i * colWidth + 4, y + 6, {
+            width: colWidth - 8,
+            ellipsis: true,
+          });
+        });
+        y += rowHeight;
+      });
+
+      doc.end();
+    });
   }
 }
